@@ -1,0 +1,13 @@
+{
+  "version": "2.25.0",
+  "commit": "da45d7c516408344d664c5e0cf6bc7847bd97faf",
+  "integrity": "sha512-4Zky9YhUMXZ9MEGX/mO3yBIVEDTtEq2L3xFCge6Db5TIZLhxZIHSojzWpvjdQo9/H7q+Zajx0Fq+W4iK464QHg==",
+  "original_sha256": {
+    "dist/cli-process-service.js": "4bc3a63931417c1cd0fa2fce48292cb842cfe63bb550516b08c4431cab6ddb46",
+    "dist/detached-runner.cjs": "d703a261ed86fc9bd8418e0231ba0d2f6f572bdbffa802977829fe73eb48e702"
+  },
+  "patched_sha256": {
+    "dist/cli-process-service.js": "d4f49916d81fe3103ee6f0c2a4e5ae45e5ce8728eadc22612d8da8acb8187f59",
+    "dist/detached-runner.cjs": "886872bfe7675b90bea34515669e6bd43a9e82cb92ef2d19e0d6ec72bc1d2b46"
+  }
+}

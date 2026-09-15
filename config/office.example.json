@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "host_id": "office",
+  "catalog": "roles.json",
+  "providers": {
+    "opencode-go": {
+      "adapter": "opencode",
+      "executable": "opencode",
+      "args": [],
+      "auth": "cli-managed",
+      "catalog_filter": "opencode-go",
+      "inherit_env": []
+    },
+    "dsh-local": {
+      "adapter": "dsh",
+      "executable": "dsh",
+      "args": [
+        "--profile",
+        "acp"
+      ],
+      "auth": "cli-managed",
+      "inherit_env": []
+    }
+  },
+  "bindings": {
+    "designer": {
+      "enabled": false
+    },
+    "developer-basic": {
+      "enabled": false
+    },
+    "developer-main": {
+      "enabled": false
+    },
+    "developer-hard": {
+      "enabled": false
+    },
+    "reviewer": {
+      "enabled": false
+    },
+    "analyst-primary": {
+      "enabled": false
+    },
+    "analyst-peer": {
+      "enabled": false
+    }
+  }
+}

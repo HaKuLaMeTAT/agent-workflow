@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "allowed_roles": [
+    "designer",
+    "developer-basic",
+    "developer-main",
+    "developer-hard",
+    "reviewer",
+    "analyst-primary",
+    "analyst-peer"
+  ],
+  "instructions": [],
+  "workflows": {
+    "design": "designer",
+    "review": "reviewer",
+    "peer-analysis": "analyst-peer"
+  }
+}

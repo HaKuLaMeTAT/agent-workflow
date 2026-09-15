@@ -1,0 +1,15 @@
+{
+  "goal": "审查当前工具的配置与结果接口，给出有证据的阻塞项；只读，不执行命令。",
+  "acceptance": [
+    "角色与模型配置分离；未知模型/档位报错。",
+    "分页截断不隐藏阻塞项的存在。"
+  ],
+  "read_paths": [
+    "src/config.mjs",
+    "src/result.mjs"
+  ],
+  "evidence": [],
+  "stage": "independent",
+  "source": "manual-review",
+  "timeout_seconds": 600
+}

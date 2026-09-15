@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "roles": {
+    "designer": {
+      "label": "方案设计师",
+      "description": "复杂方案、约束、接口与验收设计",
+      "execution": "worker",
+      "access": "read-only",
+      "can_delegate": false,
+      "result_contract": "design",
+      "instructions": "../roles/designer.md"
+    },
+    "developer-basic": {
+      "label": "基础开发师",
+      "description": "范围明确的普通实现与修复",
+      "execution": "host",
+      "access": "workspace-write",
+      "can_delegate": true,
+      "result_contract": "implementation",
+      "instructions": "../roles/developer-basic.md"
+    },
+    "developer-main": {
+      "label": "主力开发师",
+      "description": "跨模块实现、集成与最终交付",
+      "execution": "host",
+      "access": "workspace-write",
+      "can_delegate": true,
+      "result_contract": "implementation",
+      "instructions": "../roles/developer-main.md"
+    },
+    "developer-hard": {
+      "label": "攻坚开发师",
+      "description": "有证据的复杂故障与难点突破",
+      "execution": "host",
+      "access": "workspace-write",
+      "can_delegate": true,
+      "result_contract": "implementation",
+      "instructions": "../roles/developer-hard.md"
+    },
+    "reviewer": {
+      "label": "审计员",
+      "description": "独立验收、缺陷证据与针对性复核",
+      "execution": "worker",
+      "access": "read-only",
+      "can_delegate": false,
+      "result_contract": "review",
+      "instructions": "../roles/reviewer.md"
+    },
+    "analyst-primary": {
+      "label": "主分析师",
+      "description": "项目研究协调与唯一最终结论",
+      "execution": "host",
+      "access": "read-only",
+      "can_delegate": true,
+      "result_contract": "analysis",
+      "instructions": "../roles/analyst-primary.md"
+    },
+    "analyst-peer": {
+      "label": "复核分析师",
+      "description": "独立分析与关键前提交叉核验",
+      "execution": "worker",
+      "access": "read-only",
+      "can_delegate": false,
+      "result_contract": "analysis",
+      "instructions": "../roles/analyst-peer.md"
+    }
+  }
+}

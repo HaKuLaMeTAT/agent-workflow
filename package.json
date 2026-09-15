@@ -1,0 +1,42 @@
+{
+  "name": "agent-workflow",
+  "version": "0.2.0",
+  "private": true,
+  "files": [
+    "bin/",
+    "src/",
+    "ui/",
+    "config/*.example.json",
+    "config/roles.json",
+    "roles/",
+    "scripts/",
+    "skills/",
+    "patches/",
+    "tests/",
+    "docs/INSTALL.md",
+    "docs/UPSTREAM.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "description": "Configurable CLI delegation from a Codex host",
+  "bin": {
+    "aw": "bin/aw.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hakulametat/agent-workflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hakulametat/agent-workflow/issues"
+  },
+  "homepage": "https://github.com/hakulametat/agent-workflow#readme"
+}

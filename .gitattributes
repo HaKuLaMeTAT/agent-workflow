@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# Private operational material must also stay out of git archive exports.
+handoff/ export-ignore
+.runtime/ export-ignore
+docs/DESIGN.md export-ignore
+docs/ACTIVATION.md export-ignore
+docs/AUDIT-FIXES.md export-ignore
+config/*.local.json export-ignore
