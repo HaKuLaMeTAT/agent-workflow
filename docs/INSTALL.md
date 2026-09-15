@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.3）
+# 安装与本机配置（v0.4）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -71,7 +71,7 @@ node scripts/install-local.mjs --apply config/home.local.json --host-config "自
 
 自定义 Skill 目录需在当前 Codex 的扫描范围内。主机配置、命令目录和仓库目录可各自独立。`--host-config FILE` 与 `AW_HOST_CONFIG` 可在运行时覆盖登记的主机配置，`AW_ROOT` 可显式覆盖仓库位置。
 
-## 从 v0.2 升级 / 移动安装目录
+## 从 v0.2 / v0.3 升级 / 移动安装目录
 
 先结束正在执行的旧任务，再更新源码。从更新后的仓库运行：
 
@@ -83,11 +83,51 @@ node scripts/install-local.mjs --apply --update
 
 补丁脚本可将摘要完全匹配的 `aw-prepared-v1` 升级到 v0.3 的 `aw-prepared-v2`。如果上游放在其他目录，给补丁脚本传入实际目录。
 
-`--update` 默认保留**已安装配置**中的角色绑定和 UI 修改，刷新生成的入口与 Skill。可识别并转换 v0.2 指向当前仓库的 Skill 符号链接；未知安装或自定义过的旧入口不会被覆盖。需要主动替换配置时，在 `--apply` 后显式传入配置文件。
+`--update` 默认保留**已安装配置**中的角色绑定和 UI 修改，刷新生成的入口、Skill 与按需读取的 references。新增 executor 不会自动启用；旧配置未包含它时，可直接用 UI 或 configure 添加绑定。可识别并转换 v0.2 指向当前仓库的 Skill 符号链接；未知安装或自定义过的旧入口不会被覆盖。需要主动替换配置时，在 `--apply` 后显式传入配置文件。
 
 v0.3 仓库移动后，在新位置重新运行 `node scripts/install-local.mjs --apply --update`。安装器从旧登记信息找到原引用，更新仓库内部的 catalog/runtime 路径，保留外部配置和状态路径。无需手改 Skill 或设置 `AW_ROOT`。如果 Node 的位置改变，也用新 Node 重跑这条命令。自定义过用户安装位置时，升级应再次传入同样的 `--host-config`、`--bin-dir`、`--skill-dir`。
 
 移动 v0.2 仓库时，建议先在原位置升级至 v0.3，再移动并重新登记。
+
+## v0.4：Windows 执行任务迁移
+
+原生 Windows 的完整执行路径需要 Git for Windows 和已登录的 Claude CLI，并能从启动 AW 的环境定位 Git。`home` 模板包含初始禁用的 executor；`office` 模板仍保留 OpenCode/ACP，使用 executor 时需在本机配置中另加 Claude provider（可参考 home 模板）。现阶段 OpenCode/ACP 不承担可写执行。
+
+在 Windows 上重新生成本机配置和登记 Skill，不直接复制 WSL 的 host.json；其中 Linux 的 executable、catalog、state_dir 等绝对路径不适用于 Windows。迁移源码和项目文件，登录目标 CLI 后按本机目录绑定角色。已有 Windows v0.3 安装则使用上一节的 `--update` 保留本机配置。
+
+```powershell
+Get-Command node, git, claude
+node bin/aw.mjs models claude-local --host-config config/home.local.json --refresh
+node bin/aw.mjs configure --host-config config/home.local.json --role executor --provider claude-local --model claude-sonnet-5 --effort high --write
+node scripts/install-local.mjs --apply config/home.local.json
+```
+
+如已登记安装，使用 `aw configure` 修改已安装 host，不用另一份旧源配置覆盖它。模型和档位以本机目录为准；示例命令不是所有账户的模型可用性保证。
+
+执行请求见 [交接与命令格式](../skills/agent-workflow/references/execution.md)。源项目需为干净且已有提交的 Git 仓库；不含 tracked symlink/submodule。请求放在项目外或忽略目录；AW state_dir 放在目标仓库外。所有请求内的相对路径使用 `/`，支持空格和中文目录。
+
+验证使用命令加 argv 数组，不拼接 shell 字符串。Node 项目可显式声明一次性的 `execution.setup`：
+
+```json
+{
+  "command": "npm",
+  "args": ["ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+  "cwd": ".",
+  "timeout_seconds": 600
+}
+```
+
+仅在项目适用时使用此命令。worktree 不复制源目录中忽略的 node_modules；`setup` 需按真实项目定义，之后再运行 `verification`。总任务 timeout_seconds 应覆盖准备、修改、验证及修复。准备或验证不得更改交付源码。Git 应用补丁时遵循项目换行策略，包括 Windows 的 CRLF 转换。
+
+Claude 使用 `--restricted`、`dontAsk`、限定 Read/Glob/Grep/Edit/Write 与显式写入路径规则；权限提示无人应答时拒绝。AW 运行任务指定的命令，它们具有当前用户权限。此执行模式不依赖 Claude 原生 Windows 尚未提供的 OS 沙箱，也不声称提供 OS/网络隔离。CLI 管理员策略仍可能限制编辑；以 `prepare` 和真实验收结果为准。[Claude CLI 参数说明](https://code.claude.com/docs/en/cli-reference)、[权限规则](https://code.claude.com/docs/en/permissions)。
+
+可以在启用 executor 后显式运行一次真实模型验收：
+
+```text
+node scripts/live-execution-smoke.mjs --run
+```
+
+它在独立临时项目和任务状态目录中验证读文件、修改、测试、应用与清理，最多两次模型编辑调用，会消耗配置模型的额度。它不修改原有 host 配置，保留测试日志和 acceptance.json。
 
 ## 接入项目与核验
 

@@ -55,6 +55,10 @@ export function validateResult(v, contract) {
     requireValue(p.verdict!=='pass'||(p.unverified_checks.length===0 && p.acceptance_checks.length>0 && !v.findings.some(f=>f.severity==='blocker')),'invalid_result','A pass cannot contain unverified checks or blockers');
     requireValue(p.verdict!=='incomplete'||p.unverified_checks.length>0,'invalid_result','Incomplete review must name unverified checks');
   }
+  if(contract==='implementation') {
+    text(v.payload.scope,'scope');
+    for(const key of ['changes','verification','limitations'])strings(v.payload[key],key);
+  }
   return v;
 }
 export async function parseTranscript(file, contract) {

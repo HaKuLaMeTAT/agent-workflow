@@ -41,11 +41,19 @@ export const claude={
     const help=helpOutput.stdout+helpOutput.stderr,version=versionOutput.stdout+versionOutput.stderr;
     const ready=required.every(flag=>help.includes(flag));let models=[],catalog_error=null;
     if(ready&&context.catalog)try{models=await catalog(provider,context.cwd);}catch(e){catalog_error=e.message;}
-    return {available:ready,version:version.trim(),capabilities:{read_only:ready,resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'CLI restricted file tools; not an OS sandbox'};
+    const writing=ready&&['--allowedTools','--permission-mode'].every(flag=>help.includes(flag));
+    return {available:ready,version:version.trim(),capabilities:{read_only:ready,workspace_write:writing,verification:'aw-supervised-argv',resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'CLI restricted file tools; not an OS sandbox',execution_guarantee:'CLI restricted file tools with scoped edit rules in an owned worktree; AW runs declared commands as the current OS user. No OS or network sandbox.'};
   },
   prepare(snapshot,files,sessionId) {
-    permissionShape(snapshot.role.access);
-    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...controls,'--tools','Read,Glob,Grep','--json-schema',JSON.stringify(resultSchema(snapshot.role.result_contract))];
+    const writing=snapshot.role.access==='workspace-write';
+    if(!writing)permissionShape(snapshot.role.access);
+    const policy=[...controls];if(writing)policy[policy.indexOf('plan')]='dontAsk';
+    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...policy,'--tools',writing?'Read,Glob,Grep,Edit,Write':'Read,Glob,Grep','--json-schema',JSON.stringify(resultSchema(snapshot.role.result_contract))];
+    if(writing) {
+      const rules=['Read','Glob','Grep'];
+      for(const p of snapshot.execution.write_paths)for(const tool of ['Edit','Write'])rules.push(`${tool}(./${p})`,`${tool}(./${p}/**)`);
+      args.push('--allowedTools',rules.join(','));
+    }
     if(snapshot.effort!==null)args.push('--effort',snapshot.effort);
     if(sessionId)args.push('--resume',sessionId);
     return {command:snapshot.provider.executable,args,env:environment(snapshot.provider),stdin_file:files.prompt};

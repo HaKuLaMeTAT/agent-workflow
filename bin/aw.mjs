@@ -6,7 +6,7 @@ import {loadHost,resolveRole,publicRole,TOOL_ROOT} from '../src/config.mjs';
 import {discover,prepareRole} from '../src/adapter.mjs';
 import {executable} from '../src/adapters/common.mjs';
 import {readJson,requireValue} from '../src/core.mjs';
-import {submit,status,wait,result,cancel,recover} from '../src/tasks.mjs';
+import {submit,status,wait,result,cancel,recover,workspaceAction} from '../src/tasks.mjs';
 import {editBindings} from '../src/config-editor.mjs';
 const HELP=`aw init --output FILE [--preset home|office]
 aw ui [--port PORT] [--host-config FILE]  Local browser editor; loopback only
@@ -16,14 +16,15 @@ aw configure --role ID --provider ID --model ID --effort LEVEL|--no-effort [--ex
 aw run --role ID|--workflow NAME --cwd PATH --request-file FILE --request-id ID
 aw status|recover|cancel TASK | wait TASK --timeout 45 | result TASK [--cursor 0]
 aw followup TASK --request-file FILE --request-id ID
+aw workspace TASK | apply TASK [--write] | discard TASK [--write]
 Global: --host-config FILE. JSON output. No implicit installation, fallback, or task submission.`;
 try {
   const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','port'];
   const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'}}});
   const command=p[0];if(v.help||command==='help'||!command){console.log(HELP);process.exit(0);}
-  const allowed={ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh'],configure:['role','provider','model','effort','no-effort','execution','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[]};
+  const allowed={ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh'],configure:['role','provider','model','effort','no-effort','execution','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
   requireValue(Object.hasOwn(allowed,command),'invalid_command',HELP);
-  const positional=['models','status','recover','wait','result','followup','cancel'].includes(command);
+  const positional=['models','status','recover','wait','result','followup','cancel','workspace','apply','discard'].includes(command);
   requireValue(p.length===(positional?2:1),'invalid_input',positional?'Exactly one provider/task ID required':'Unexpected positional arguments');
   for(const key of Object.keys(v))requireValue(key==='host-config'||allowed[command].includes(key),'invalid_input',`Option --${key} does not apply to ${command}`);
   if(command==='init') {
@@ -77,5 +78,6 @@ try {
   if(command==='wait')output=await wait(h,p[1],Number(v.timeout??45));
   if(command==='result')output=await result(h,p[1],v.cursor===undefined?undefined:Number(v.cursor));
   if(command==='cancel')output=await cancel(h,p[1]);
+  if(['workspace','apply','discard'].includes(command))output=await workspaceAction(h,p[1],command==='workspace'?'inspect':command,{write:!!v.write});
   console.log(JSON.stringify(output,null,2));
 }catch(e){console.error(JSON.stringify({error:e.code??'internal_error',message:e.message}));process.exitCode=1;}

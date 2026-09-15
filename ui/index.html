@@ -37,7 +37,7 @@
               <div class="model-row"><label for="model">模型 <span>MODEL</span></label><button id="refresh-models" class="text-button" type="button">↻ 读取模型目录</button></div>
               <div class="field full"><input id="model" name="model" list="model-options" autocomplete="off" spellcheck="false" placeholder="选择或输入模型 ID"><datalist id="model-options"></datalist><p id="model-help" class="field-help"></p></div>
               <div class="field"><label for="effort">推理档位 <span>EFFORT</span></label><input id="effort" name="effort" list="effort-options" autocomplete="off" spellcheck="false" placeholder="选择档位，或留空"><datalist id="effort-options"></datalist><p class="field-help">留空表示不指定；模型须支持该选项。</p></div>
-              <div class="field"><label for="execution">执行位置 <span>EXECUTION</span></label><select id="execution" name="execution"><option value="worker">只读辅助任务</option><option value="host">当前主对话</option></select><p class="field-help">决定由哪个会话承担这个角色。</p></div>
+              <div class="field"><label for="execution">执行位置 <span>EXECUTION</span></label><select id="execution" name="execution"><option value="worker">独立辅助任务</option><option value="host">当前主对话</option></select><p class="field-help">决定由哪个会话承担这个角色；写入能力由角色权限决定。</p></div>
               <div class="execution-note full"><span aria-hidden="true">↳</span><p id="execution-note"></p></div>
               <label class="enable-row full" for="enabled"><span><strong>启用这个角色</strong><small>关闭后，新任务不能调用此角色。</small></span><input id="enabled" name="enabled" type="checkbox" role="switch"></label>
             </fieldset>

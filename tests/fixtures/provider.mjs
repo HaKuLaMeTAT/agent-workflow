@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 const args=process.argv.slice(2),value=k=>args[args.indexOf(k)+1],emit=e=>console.log(JSON.stringify(e));
-if(args.includes('--help')){console.log('--safe-mode --restricted --tools --strict-mcp-config --setting-sources --permission-prompts --json-schema --resume --effort --ignore-user-config --ignore-rules --sandbox --output-schema --json --pure --format --variant --session --agent');process.exit(0);}
+if(args.includes('--help')){console.log('--safe-mode --restricted --tools --allowedTools --permission-mode --strict-mcp-config --setting-sources --permission-prompts --json-schema --resume --effort --ignore-user-config --ignore-rules --sandbox --output-schema --json --pure --format --variant --session --agent');process.exit(0);}
 if(args.includes('--version')){console.log('fixture 1.0');process.exit(0);}
 if(args[0]==='models'){console.log('fixture/model\n'+JSON.stringify({variants:{high:{}}},null,2));process.exit(0);}
 if(args.includes('--input-format')) {
@@ -54,6 +54,17 @@ if(args.includes('--input-format')) {
     if(backend==='opencode')emit({type:'error',sessionID:sessionId,error:{message:'usage quota reached'}});
     process.exitCode=1;
   }else {
+    if(request.execution) {
+      if(value('--tools')!=='Read,Glob,Grep,Edit,Write'||value('--permission-mode')!=='dontAsk'||!value('--allowedTools').includes('Edit(./src/**)'))throw new Error('Missing scoped editing policy');
+      const before=fs.readFileSync('src/math.mjs','utf8');
+      const corrected=request.goal!=='execute-fix'||args.includes('--resume');
+      fs.writeFileSync('src/math.mjs',`export const add = (a, b) => ${corrected?'a + b':'a - b'};\n`);
+      fs.writeFileSync('src/new.bin',Buffer.from([0,1,2,255]));
+      if(fs.existsSync('src/remove.txt'))fs.unlinkSync('src/remove.txt');
+      if(request.goal==='execute-outside')fs.writeFileSync('outside.txt','outside scope');
+      emit({type:'result',is_error:false,session_id:sessionId,structured_output:{summary:'Implementation prepared for AW verification',findings:[],evidence_refs:['src/math.mjs'],uncertainties:[],payload:{scope:'src',changes:[before.trim()],verification:['AW verification pending'],limitations:[]}}});
+      process.exit(0);
+    }
     const result=data(request,args.includes('--resume')||args.includes('--session')||args.includes('resume'));
     if(backend==='claude')emit({type:'result',is_error:false,session_id:sessionId,structured_output:result});
     if(backend==='codex'){emit({type:'item.completed',item:{type:'agent_message',text:JSON.stringify(result)}});emit({type:'turn.completed',usage:{input_tokens:2,output_tokens:3}});}

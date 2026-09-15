@@ -1,8 +1,8 @@
 # Agent Workflow
 
-以 Codex App / Codex CLI 为主入口，调用可配置的本地 AI CLI 完成方案设计、独立审查和交叉分析。辅助任务拥有独立上下文，主任务先读取摘要，再按需读取证据。
+以 Codex App / Codex CLI 为主入口，调用可配置的本地 AI CLI 完成实现、方案设计、独立审查和交叉分析。辅助任务拥有独立上下文，主任务先读取摘要，再按需读取证据。
 
-Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.3**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
+Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.4**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
 
 ## 功能
 
@@ -11,7 +11,9 @@ Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用
 - **按主机配置角色**：职责与 CLI、模型、推理档位分离，可在不同电脑使用不同绑定。
 - **本地配置界面**：`aw ui` 查看职责、编辑绑定、预览差异并保存；新任务读取更新后的配置。
 - **多 CLI 适配**：Claude Code、Codex、OpenCode，以及 ACP 兼容 CLI（包括 DSH）。
-- **显式协作**：按角色或项目工作流分派只读辅助任务；不自动切换模型、重试付费调用或递归委派。
+- **完整执行任务**：Claude executor 在独立 worktree 中读写，AW 运行指定测试，并在任务预算内续用原会话修复。
+- **任务交接与接收**：携带当前状态、失败尝试和验收条件；检查实际差异与测试记录后接收，工作区单独清理。
+- **显式协作**：按角色或项目工作流分派任务；保留只读顾问，不自动切换模型或递归委派。
 - **可恢复任务**：后台执行、状态查询、取消、原生会话续接和幂等请求。
 - **有界结果**：默认摘要包含审计结论、阻塞项、未验证项及证据引用，详细结果分页读取。
 
@@ -68,9 +70,28 @@ aw configure --role reviewer --provider claude-local \
 
 `configure` 默认只输出预览。没有推理档位时使用 `--no-effort`；`--effort none` 表示后端真正的 `none` 选项。`providers[].models` 可省略以使用发现目录；填写时作为主机允许列表，不能冒充服务端验证。
 
-`host` 角色由当前主对话承担，**aw 不会改变当前 Codex App / CLI 的模型设置**。`worker` 角色启动只读辅助任务，交付分析或建议；即使角色名称包含“开发”，也不能写入文件。修改和最终整合由主任务完成。
+`host` 角色由当前主对话承担，**aw 不会改变当前 Codex App / CLI 的模型设置**。`worker` 的权限由角色和绑定决定。现有顾问/审查角色保持只读；新增 `executor` 可在独立工作区内读写并完成验证，初始禁用，绑定到本机 Claude 后启用。将旧 host 开发角色改为 worker 时仍默认只读；建议使用专用 executor，避免混淆。
 
 保存后，新任务读取新绑定。已有任务保持原生会话及创建时的模型、档位；切换 provider 后，旧会话可能不能继续追问。
+
+## 完整执行任务
+
+启用 executor 后，参考 [执行交接格式](skills/agent-workflow/references/execution.md) 提交 `execution.write_paths`、验证命令和轮次预算。支持干净 Git 基线、可选的显式依赖准备、同会话修复、测试快照核对，以及新文件/删除/二进制补丁。源目录、安装目录和任务状态目录可以各自独立。
+
+```text
+aw configure --role executor --provider claude-local --model claude-sonnet-5 --effort high --write
+aw prepare --role executor --cwd "项目目录"
+aw run --role executor --cwd "项目目录" --request-file "请求文件" --request-id implementation-001
+aw wait TASK_ID --timeout 45
+aw workspace TASK_ID
+aw apply TASK_ID
+aw apply TASK_ID --write
+aw discard TASK_ID --write
+```
+
+`apply` 默认检查并预览；`--write` 才应用，不暂存或提交。`discard --write` 删除已无活动任务的自有 worktree，应在变更已接收或明确放弃后执行。准备步骤只运行一次；断言失败可以在 `max_attempts` 内续用 Claude 修复，认证、额度、权限、超时和范围错误直接停止。
+
+Windows 迁移及已有安装升级见 [安装说明](docs/INSTALL.md)。v0.4 的完整执行 adapter 首先支持 Claude；Codex、OpenCode、ACP 保留已有只读功能。用量统计、反馈精简和 token 节省对照评估留待后续阶段；执行结果中的现有 usage 只代表最后一次 provider 调用。
 
 ## 提交与恢复任务
 
@@ -108,7 +129,7 @@ aw cancel TASK_ID
 
 ## 权限、数据与验证范围
 
-项目角色限制按祖先目录逐层收紧，子目录不能扩大权限。请求文件不能覆盖 executable、认证或权限参数。辅助任务仅使用允许的只读工具，不执行测试、写入、交易或递归委派；主任务负责必要的运行验证。
+项目角色限制按祖先目录逐层收紧，子目录不能扩大权限。请求文件不能覆盖 executable、认证或权限参数。只读辅助任务交付分析与建议。executor 使用限定的文件工具，AW 运行请求声明的准备/验证命令；不会给模型任意终端权限或递归委派。命令以当前用户权限执行，worktree 不提供操作系统或网络沙箱。
 
 各 adapter 的 CLI 工具限制不等于统一的操作系统沙箱。目录探测、协议测试和格式正确的结果不能证明所有后端的真实权限行为或回答质量。登录、额度、管理员策略及模型可用性需在目标环境中核对。
 

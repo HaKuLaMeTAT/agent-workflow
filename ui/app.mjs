@@ -20,7 +20,7 @@ function handleError(error){if(error.code==='config_conflict'){conflict=true;upd
 function currentRole(){return snapshot.roles.find(r=>r.id===selected);}
 function binding(role){return drafts.get(role.id)??role.binding;}
 function changes(){return [...drafts].map(([role,next])=>({role,patch:Object.fromEntries(editable.filter(key=>next[key]!==snapshot.roles.find(r=>r.id===role).binding[key]).map(key=>[key,next[key]]))}));}
-function displayValue(field,value){if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'只读辅助任务';return String(value);}
+function displayValue(field,value){if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'独立辅助任务';return String(value);}
 function renderRoles(){
   $('roles').replaceChildren(...snapshot.roles.map(role=>{
     const b=binding(role),button=element('button',undefined,'role-button');button.type='button';button.dataset.role=role.id;button.setAttribute('aria-current',String(role.id===selected));
@@ -48,7 +48,7 @@ function renderEfforts(){
   $('effort-options').replaceChildren(...efforts.map(e=>{const option=element('option');option.value=e;return option;}));
 }
 function renderExecution(){
-  $('execution-note').textContent=$('execution').value==='host'?'职责由当前主对话承担。实际模型与推理档位仍由 Codex App／CLI 设置，此处保存不会切换当前会话。':'新建独立的只读辅助任务，按这里的模型与档位执行。辅助任务交付分析、方案或审查结果，文件修改由主对话完成。';
+  $('execution-note').textContent=$('execution').value==='host'?'职责由当前主对话承担。实际模型与推理档位仍由 Codex App／CLI 设置，此处保存不会切换当前会话。':currentRole().id==='executor'?'在独立工作区修改文件并运行任务指定的验证，失败时在预算内续接修复。当前支持 Claude CLI；变更由主任务验收后接收。':'新建独立的只读辅助任务，按这里的模型与档位执行，交付分析、方案或审查结果。';
 }
 function renderEditor(){
   const role=currentRole(),b=binding(role);

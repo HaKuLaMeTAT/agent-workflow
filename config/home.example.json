@@ -41,6 +41,12 @@
     }
   },
   "bindings": {
+    "executor": {
+      "provider": "claude-local",
+      "model": "claude-sonnet-5",
+      "effort": "high",
+      "enabled": false
+    },
     "designer": {
       "provider": "claude-local",
       "model": "claude-opus-5",

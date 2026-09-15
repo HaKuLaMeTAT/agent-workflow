@@ -106,7 +106,7 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
   requireValue(defaults&&binding?.enabled,'role_unavailable',`Role unavailable on ${h.host_id}: ${roleId}`);
   requireValue(project.allowed_roles.includes(roleId),'role_not_allowed',`Role not allowed by ancestor project policy: ${roleId}`);
   const execution=binding.execution??defaults.execution;
-  const role={...defaults,execution,access:binding.access??(execution==='worker'?'read-only':defaults.access),can_delegate:execution==='worker'?false:defaults.can_delegate};
+  const role={...defaults,execution,access:binding.access??(execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access),can_delegate:execution==='worker'?false:defaults.can_delegate};
   const provider=h.providers[binding.provider],model=overrides.model??binding.model,effort=Object.hasOwn(overrides,'effort')?overrides.effort:binding.effort??null;
   validateModel(provider,model,effort);
   const binary=executable(provider.executable),runtime=checkRuntime(h.upstream_dir);

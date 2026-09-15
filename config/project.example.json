@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "allowed_roles": [
+    "executor",
     "designer",
     "developer-basic",
     "developer-main",
@@ -11,6 +12,7 @@
   ],
   "instructions": [],
   "workflows": {
+    "implement": "executor",
     "design": "designer",
     "review": "reviewer",
     "peer-analysis": "analyst-peer"

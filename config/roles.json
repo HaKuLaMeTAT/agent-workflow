@@ -1,6 +1,15 @@
 {
   "schema_version": 1,
   "roles": {
+    "executor": {
+      "label": "执行开发师",
+      "description": "独立工作区内读取、修改、验证并在预算内修复",
+      "execution": "worker",
+      "access": "workspace-write",
+      "can_delegate": false,
+      "result_contract": "implementation",
+      "instructions": "../roles/executor.md"
+    },
     "designer": {
       "label": "方案设计师",
       "description": "复杂方案、约束、接口与验收设计",

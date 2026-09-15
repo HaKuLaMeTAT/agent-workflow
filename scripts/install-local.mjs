@@ -13,6 +13,15 @@ import {withFileLock} from '../src/locking.mjs';
 const exists=file=>Boolean(fs.lstatSync(file,{throwIfNoEntry:false}));
 const sh=s=>"'"+s.replaceAll("'","'\\''")+"'";
 const ps=s=>"'"+s.replaceAll("'","''")+"'";
+function copyReferences(source,target) {
+  // Small ordinary skill files: avoid Node 22's Windows cpSync namespace-path failures.
+  fs.mkdirSync(target,{recursive:true});
+  for(const entry of fs.readdirSync(source,{withFileTypes:true})) {
+    const from=path.join(source,entry.name),to=path.join(target,entry.name);
+    if(entry.isDirectory())copyReferences(from,to);
+    else {requireValue(entry.isFile(),'invalid_skill','Skill references must be ordinary files');fs.writeFileSync(to,fs.readFileSync(from));}
+  }
+}
 export async function installLocal({source,update=false,hostFile=userPaths().host,binDir=userPaths().bin,skillDir=userPaths().skill,root=TOOL_ROOT}={}) {
   requireValue(['linux','win32'].includes(process.platform),'platform_unverified','Supports Linux/WSL and Windows');
   root=fs.realpathSync(root);hostFile=path.resolve(hostFile);binDir=path.resolve(binDir);skillDir=path.resolve(skillDir);
@@ -62,6 +71,8 @@ export async function installLocal({source,update=false,hostFile=userPaths().hos
     fs.mkdirSync(skillDir,{recursive:true});
     atomicJson(hostFile,config);
     fs.copyFileSync(path.join(root,'skills','agent-workflow','aw.mjs'),launcher);
+    const references=path.join(root,'skills','agent-workflow','references');
+    if(fs.existsSync(references))copyReferences(references,path.join(skillDir,'references'));
     atomicJson(manifestFile,manifest);
     fs.writeFileSync(path.join(skillDir,'SKILL.md'),skill);
     fs.writeFileSync(cli,wrapper,{mode:0o700});

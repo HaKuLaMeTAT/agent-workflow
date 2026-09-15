@@ -36,7 +36,8 @@ export async function editBindings(file,{changes,revision,write=false}) {
     const validated=parseHost(hostFile,next),diff=[];
     for(const role of seen) {
       const before=effectiveBinding(current.host,role),after=effectiveBinding(validated,role),b=validated.bindings[role],defaults=validated.roles[role];
-      requireValue(after.execution!=='worker'||(b.access??'read-only')==='read-only','permission_unsupported','辅助任务必须保持只读；此绑定含不兼容的写入权限。');
+      const access=b.access??(after.execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access);
+      requireValue(!after.enabled||after.execution!=='worker'||access==='read-only'||(validated.providers[b.provider].adapter==='claude'&&defaults.result_contract==='implementation'),'permission_unsupported','当前可写执行模式需要 Claude adapter 和 implementation 结果合同。');
       for(const field of EDITABLE)if(before[field]!==after[field])diff.push({role,label:defaults.label,field,before:before[field],after:after[field]});
     }
     if(write) {

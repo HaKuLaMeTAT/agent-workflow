@@ -46,17 +46,18 @@ test('install from arbitrary checkout; launch without PATH; re-register moved ch
   const base=temporary(t),root=checkout(base,'checkout one'),unrelated=path.join(base,'unrelated project');fs.mkdirSync(unrelated);
   const source=path.join(root,'config/office.example.json'),hostFile=path.join(base,'private config','host.json'),binDir=path.join(base,'user bin'),skillDir=path.join(base,'codex skills','agent-workflow');
   const installed=await installLocal({source,root,hostFile,binDir,skillDir});
-  assert.equal(installed.version,'0.3.0');assert.equal(fs.lstatSync(skillDir).isSymbolicLink(),false);
+  assert.equal(installed.version,'0.4.0');assert.equal(fs.lstatSync(skillDir).isSymbolicLink(),false);
   const manifest=readJson(path.join(skillDir,'installation.json'));
+  assert.ok(fs.existsSync(path.join(skillDir,'references/execution.md')));
   assert.equal(manifest.tool_root,root);assert.equal(manifest.node,process.execPath);
   const env={...process.env,PATH:'',AW_ROOT:'',AW_HOST_CONFIG:''};
   const launch=(...args)=>JSON.parse(execFileSync(process.execPath,[path.join(skillDir,'aw.mjs'),...args],{cwd:unrelated,env,encoding:'utf8'}));
-  assert.equal(launch('roles').length,7);
+  assert.equal(launch('roles').length,8);
   const settings=readJson(hostFile);settings.host_id='custom-edited';atomicJson(hostFile,settings);
   await assert.rejects(installLocal({source,root,hostFile,binDir,skillDir}),{code:'already_exists'});
   const moved=path.join(base,'moved checkout 中文');fs.renameSync(root,moved);
   await installLocal({update:true,root:moved,hostFile,binDir,skillDir});
-  assert.equal(readJson(hostFile).host_id,'custom-edited');assert.ok(loadHost(hostFile).upstream_dir.startsWith(moved));assert.equal(launch('roles').length,7);
+  assert.equal(readJson(hostFile).host_id,'custom-edited');assert.ok(loadHost(hostFile).upstream_dir.startsWith(moved));assert.equal(launch('roles').length,8);
   // Explicit configuration wins over the registered host.
   assert.equal(launch('roles','--host-config',path.join(moved,'config/home.example.json'))[0].provider,'claude-local');
   const before=fs.readFileSync(hostFile,'utf8');

@@ -23,6 +23,9 @@
     }
   },
   "bindings": {
+    "executor": {
+      "enabled": false
+    },
     "designer": {
       "enabled": false
     },
