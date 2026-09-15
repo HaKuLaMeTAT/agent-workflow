@@ -2,6 +2,7 @@
 /*
 !/.gitignore
 !/.gitattributes
+!/AGENTS.md
 !/README.md
 !/LICENSE
 !/package.json
