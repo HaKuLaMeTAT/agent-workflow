@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape} from './common.mjs';
+import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape,observeTelemetry} from './common.mjs';
 import {readJson,requireValue} from '../core.mjs';
 const required=['--ignore-user-config','--ignore-rules','--sandbox','--output-schema','--json'];
 export const codex={
@@ -28,18 +28,19 @@ export const codex={
       '-c','approval_policy="never"','-c',`sandbox_mode="${full?'danger-full-access':writing?'workspace-write':'read-only'}"`,'-c','sandbox_workspace_write.network_access=false','-c','mcp_servers={}',
       '-c','features.multi_agent=false','-c','features.apps=false','-c','features.hooks=false','-c','web_search="disabled"');
     if(snapshot.effort!==null)args.push('-c',`model_reasoning_effort=${JSON.stringify(snapshot.effort)}`);
+    if(!writing&&snapshot.read_mode==='evidence')args.push('-c','features.shell_tool=false','-c','features.unified_exec=false','-c','tools.view_image=false','-c','project_doc_max_bytes=0');
     args.push('-');
     return {command:snapshot.provider.executable,args,env:environment(snapshot.provider),stdin_file:files.prompt};
   },
   async observe(file) {
-    const o=baseObservation();let lastMessage;
-    for(const e of await events(file)) {
+    const o=baseObservation();let lastMessage;const list=await events(file);
+    for(const e of list) {
       if(e.type==='thread.started'){o.session_id=e.thread_id??null;o.model=e.model??null;}
       if(e.type==='item.completed'&&e.item?.type==='agent_message')lastMessage=e.item.text;
       if(e.type==='turn.completed'){o.final=true;o.usage=usage(e.usage);}
       if(e.type==='turn.failed'||e.type==='error')o.error=errorCode(e.error?.message??e.message);
     }
     if(o.final&&!o.error)try{o.data=parseObject(lastMessage);}catch(e){o.error=e.code;}
-    return o;
+    return observeTelemetry(o,list,'codex');
   }
 };

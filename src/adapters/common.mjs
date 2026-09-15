@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnCli,stopChild} from '../process.mjs';
 import {AwError,requireValue} from '../core.mjs';
+import {telemetry,tokenUsage} from '../telemetry.mjs';
 const envValue=key=>process.env[Object.keys(process.env).find(k=>process.platform==='win32'?k.toUpperCase()===key.toUpperCase():k===key)];
 export function executable(command) {
   const windows=process.platform==='win32';
@@ -56,6 +57,7 @@ export async function events(file) {
 }
 export function errorCode(detail) {
   const text=String(detail??'');
+  if(/max.?turns|budget.?exhausted|budget.?limit/i.test(text))return 'budget_exhausted';
   if(/rate.?limit|quota|usage.?limit|hit.*limit|exceeded.*limit/i.test(text))return 'quota_exhausted';
   if(/auth|login|log in|invalid.?token|unauthorized/i.test(text))return 'authentication_required';
   if(/permission|denied|not allowed/i.test(text))return 'permission_blocked';
@@ -63,9 +65,16 @@ export function errorCode(detail) {
   return 'provider_error';
 }
 export function usage(value) {
-  if(!value)return null;
-  const normalized={...value,cache_read_input_tokens:value.cache_read_input_tokens??value.cached_input_tokens};
-  return Object.fromEntries(['input_tokens','output_tokens','cache_creation_input_tokens','cache_read_input_tokens'].map(k=>[k,Number.isFinite(normalized[k])?normalized[k]:null]));
+  return tokenUsage(value);
+}
+export function observeTelemetry(o,list,adapter) {
+  const meter=telemetry(adapter);let reported;
+  for(const e of list){meter.ingest(e);if(e.type==='aw_telemetry')reported=e.telemetry;
+    if(e.type==='aw_delivery'){o.data=e.data;o.delivery=e.delivery;o.final=true;o.error=null;}}
+  const t=reported??meter.snapshot();
+  Object.assign(o,{usage:t.usage,usage_complete:t.usage_complete,usage_source:t.usage_source,estimated_cost_usd:t.estimated_cost_usd,telemetry:t});
+  if(t.stop_reason&&t.stop_reason!=='delivery_recovered')o.error=t.stop_reason.startsWith('budget_exhausted')?'budget_exhausted':t.stop_reason;
+  return o;
 }
 export function baseObservation() {return {session_id:null,model:null,tools:null,reads:[],data:null,error:null,final:false,usage:null,estimated_cost_usd:null};}
 export function permissionShape(access) {

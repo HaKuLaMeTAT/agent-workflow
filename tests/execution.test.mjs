@@ -55,6 +55,7 @@ test('execution: read/edit/test/fix in one native session; receive, apply and di
   assert.equal((await run(raw,'fix')).task_id,task.task_id,'Idempotent resubmission must not create another workspace/model turn');
   const output=await result(h,task.task_id),report=output.execution;
   assert.equal(report.outcome,'verified');assert.equal(report.attempts.length,2);
+  assert.equal(output.usage.output_tokens,6);assert.equal(output.usage_complete,true);assert.equal(output.estimated_cost_usd,0.02);
   assert.equal(report.setup[0].exit_code,0);
   assert.equal(report.attempts[0].verification[0].exit_code,1);assert.equal(report.attempts[1].verification[0].exit_code,0);
   assert.equal(report.attempts[1].verification[0].snapshot_hash,report.snapshot_hash);

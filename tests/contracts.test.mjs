@@ -74,7 +74,8 @@ test('request and adapter boundary: no shell, no inherited API credential, no se
     assert.equal(c.env.ANTHROPIC_API_KEY,undefined);assert.equal(c.env.AW_WORKER,'1');
     assert.equal(c.args[c.args.indexOf('--resume')+1],'session-1');
     assert.ok(!c.args.includes('--fork-session'));assert.ok(!c.args.includes('--dangerously-skip-permissions'));
-    assert.equal(c.args[c.args.indexOf('--tools')+1],'Read,Glob,Grep');
+    assert.equal(c.args[c.args.indexOf('--tools')+1],'');
+    assert.match(request.prompt,/Evidence bundle/);
     assert.ok(!c.args.includes(request.prompt));
   } finally {if(before===undefined)delete process.env.ANTHROPIC_API_KEY;else process.env.ANTHROPIC_API_KEY=before;}
 });

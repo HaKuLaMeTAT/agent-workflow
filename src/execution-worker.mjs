@@ -5,10 +5,12 @@ import {fileURLToPath} from 'node:url';
 import {spawnCli,stopChild} from './process.mjs';
 import {readJson,atomicJson,requireValue} from './core.mjs';
 import {getAdapter,prepareRequest} from './adapter.mjs';
-import {validateResult,resultSchema} from './result.mjs';
+import {normalizeDelivery,deliverySchema} from './result.mjs';
 import {environment} from './adapters/common.mjs';
 import {commandDirectory,runFileCheck} from './execution.mjs';
 import {captureChanges} from './workspaces.mjs';
+import {guardedCommand} from './worker-policy.mjs';
+import {remainingBudget,exhaustedBudget,sumCounters} from './budget.mjs';
 
 const emit=value=>console.log(JSON.stringify(value));
 async function runLogged(plan,directory,{timeout,onEvent,onStart}={}) {
@@ -37,7 +39,7 @@ async function runLogged(plan,directory,{timeout,onEvent,onStart}={}) {
 const tail=file=>{const fd=fs.openSync(file,'r');try{const size=fs.fstatSync(fd).size,buffer=Buffer.alloc(Math.min(size,4000));fs.readSync(fd,buffer,0,buffer.length,Math.max(0,size-buffer.length));return buffer.toString();}finally{fs.closeSync(fd);}};
 
 export async function execute(plan) {
-  const {workspace,directory}=plan,snapshot={...plan.snapshot,cwd:workspace.cwd,execution:plan.request.execution};
+  const {workspace,directory}=plan;let snapshot={...plan.snapshot,cwd:workspace.cwd,execution:plan.request.execution,request:plan.request};
   const adapter=getAdapter(snapshot.provider.adapter),attempts=[],setup=[];
   let request=plan.request,session=plan.session_id??null,observed={session_id:session,model:null,usage:null,estimated_cost_usd:null},report;
   const reportPath=path.join(directory,'execution.json');
@@ -56,10 +58,14 @@ export async function execute(plan) {
       requireValue(captureChanges(workspace,request.execution,directory).snapshot_hash===before.snapshot_hash,'setup_changed_source','Setup must not change deliverable source files');
     }
     for(let index=0;index<request.execution.max_attempts;index++) {
+      const used=sumCounters(attempts.map(a=>a.telemetry?.counters));
+      const available=plan.snapshot.remaining_budget??request.budget;
+      requireValue(!exhaustedBudget(available,used),'budget_exhausted','Execution attempts exhausted the shared work-package budget');
+      snapshot={...snapshot,remaining_budget:remainingBudget(available,used)};
       const dir=path.join(directory,`attempt-${index+1}`);fs.mkdirSync(dir,{recursive:true,mode:0o700});
       const files={directory:dir,prompt:path.join(dir,'prompt.txt'),schema:path.join(dir,'result-schema.json')};
-      fs.writeFileSync(files.prompt,prepareRequest(snapshot,request).prompt,{mode:0o600});atomicJson(files.schema,resultSchema(snapshot.role.result_contract));
-      const command={...adapter.prepare(snapshot,files,session),cwd:workspace.cwd};
+      fs.writeFileSync(files.prompt,prepareRequest(snapshot,request).prompt,{mode:0o600});atomicJson(files.schema,deliverySchema(snapshot.role.result_contract));
+      const command={...guardedCommand(adapter.prepare(snapshot,files,session),snapshot,files,{request,remaining:snapshot.remaining_budget}),cwd:workspace.cwd};
       const attempt={number:index+1,started_at:null,provider:null,verification:[]};attempts.push(attempt);persist({});
       const provider=await runLogged(command,dir,{onStart:()=>{attempt.started_at=new Date().toISOString();persist({});},onEvent:e=>{
         const id=e.type==='system'&&e.subtype==='init'?e.session_id:e.type==='thread.started'?e.thread_id:e.type==='aw_acp'?e.observation?.session_id:e.sessionID;
@@ -67,6 +73,7 @@ export async function execute(plan) {
       }});
       attempt.provider=provider;persist({});
       observed=await adapter.observe(provider.stdout_path);
+      attempt.telemetry=observed.telemetry??null;
       attempt.observed_model=observed.model??null;attempt.observed_effort=observed.effective_effort??null;persist({});
       requireValue(!session||observed.session_id===session,'session_mismatch','Execution continuation did not preserve its native session');
       session=observed.session_id??session;
@@ -74,7 +81,7 @@ export async function execute(plan) {
       requireValue(!observed.error,observed.error,'Provider failed');
       requireValue(provider.exit_code===0&&observed.final,'provider_exit_nonzero','Provider did not finish successfully');
       requireValue(!observed.model||observed.model===snapshot.model,'model_mismatch','Provider returned another model');
-      validateResult(observed.data,snapshot.role.result_contract);
+      const delivery=normalizeDelivery(observed.data,snapshot.role.result_contract);observed.data=delivery.data;observed.delivery??=delivery.delivery;
       requireValue(!observed.data.findings.some(f=>f.severity==='blocker'),'implementation_blocked','Worker reported an unresolved implementation blocker');
       const before=captureChanges(workspace,request.execution,dir);
       for(let n=0;n<request.execution.verification.length;n++) {

@@ -40,7 +40,8 @@ for(const adapter of ['claude','codex','opencode','acp','dsh'])test(`directory $
   assert.equal(report.artifacts.length,2);assert.ok(report.artifacts.every(a=>a.status==='created'&&a.sha256&&path.isAbsolute(a.path)));
   assert.equal(fs.existsSync(path.join(project,'out')),false);assert.equal(fs.existsSync(path.join(report.workspace,'.git')),false);
   await assert.rejects(workspaceAction(h,task.task_id,'apply',{write:true}),{code:'apply_unsupported'});
-  const follow=request();delete follow.execution;follow.read_paths=['out/result.json'];
+  // The provider reuses input.txt while regenerating the artifact: declare that read.
+  const follow=request();delete follow.execution;follow.read_paths=['input.txt','out/result.json'];
   const next=await submit(h,{parentId:task.task_id,raw:follow,requestId:'continue'});assert.equal((await wait(h,next.task_id,40)).state,'completed');
   assert.equal(next.dispatch.purpose,'directory-good');assert.equal((await result(h,next.task_id)).dispatch.provider_turns,1);
   assert.equal(readTask(h,next.task_id).session_id,readTask(h,task.task_id).session_id);

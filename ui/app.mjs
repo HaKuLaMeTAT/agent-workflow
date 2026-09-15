@@ -1,6 +1,8 @@
 const $=id=>document.getElementById(id);
-const editable=['provider','model','effort','enabled','execution','access','permissions'];
+const editable=['provider','model','effort','enabled','execution','access','permissions','read_mode'];
+const budgetKeys=['max_model_turns','max_tool_calls','max_output_tokens','max_provider_calls','max_duration_seconds','max_read_bytes','max_total_read_bytes'];
 const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置',access:'写入能力',permissions:'权限策略',models:'模型允许列表',roles:'路由角色',escalate_after:'升级失败阈值',max_delegations:'单个工作包委派上限'};
+Object.assign(fieldNames,{budget:'执行预算',read_mode:'读取方式'});
 const fragment=new URLSearchParams(location.hash.slice(1)),linkToken=fragment.get('token');
 let token=linkToken;
 try{if(linkToken)sessionStorage.setItem('aw-ui-token',linkToken);else token=sessionStorage.getItem('aw-ui-token');}catch{/* The complete link still works when browser storage is unavailable. */}
@@ -19,7 +21,7 @@ function errorText(error){return error.name==='TimeoutError'?'本地服务响应
 function handleError(error){if(error.code==='config_conflict'){conflict=true;updateActions();}notice(errorText(error));}
 function currentRole(){return snapshot.roles.find(r=>r.id===selected);}
 function binding(role){return drafts.get(role.id)??role.binding;}
-function changes(){return [...drafts].map(([role,next])=>({role,allow_model:next.allow_model===true,patch:Object.fromEntries(editable.filter(key=>next[key]!==snapshot.roles.find(r=>r.id===role).binding[key]).map(key=>[key,next[key]]))}));}
+function changes(){return [...drafts].map(([role,next])=>({role,allow_model:next.allow_model===true,patch:Object.fromEntries([...editable,'budget'].filter(key=>JSON.stringify(next[key])!==JSON.stringify(snapshot.roles.find(r=>r.id===role).binding[key])).map(key=>[key,next[key]]))}));}
 function displayValue(field,value){if(typeof value==='object'&&value!==null)return JSON.stringify(value);if(field==='permissions')return value==='full-access'?'完整权限（主机与网络访问）':'受限权限';if(field==='access')return value==='workspace-write'?'可修改文件':'只读';if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'独立辅助任务';return String(value);}
 function renderRoles(){
   $('roles').replaceChildren(...[...snapshot.roles].sort((a,b)=>Number(binding(a).execution==='host')-Number(binding(b).execution==='host')).map(role=>{
@@ -53,6 +55,8 @@ function renderExecution(){
   $('provider').required=!host;
   $('access').options[1].disabled=currentRole().access!=='workspace-write';
   $('permissions').disabled=!writable;
+  $('read_mode').options[1].disabled=writable;
+  if(writable&&$('read_mode').value==='evidence')$('read_mode').value='';
   $('execution-note').textContent=host?'职责由当前 Codex 会话承担，无需绑定外部 CLI、模型或档位。建议保持基础和主力开发在主入口，只为升级与专项角色配置外部模型。':writable?(full?'完整权限：worker 可读写文件、运行命令并访问主机与网络。独立工作区不提供系统隔离；AW 仍校验交付范围并运行验收命令。':'受限权限：worker 修改指定范围的文件，AW 执行声明的测试并续接修复。Codex 使用原生工作区沙箱；其他 CLI 使用文件工具权限。'):'独立只读任务，交付分析、方案或审查结果。';
 }
 function renderEditor(){
@@ -61,6 +65,7 @@ function renderEditor(){
   $('provider').replaceChildren(element('option','请选择 CLI'),...snapshot.providers.map(p=>{const option=element('option',`${p.id} · ${p.adapter}`);option.value=p.id;return option;}));
   $('provider').options[0].value='';
   for(const key of editable){if(key==='enabled')$(key).checked=b[key];else $(key).value=b[key]??'';}
+  for(const key of budgetKeys)$(key).value=b.budget?.[key]??snapshot.budget[key];
   $('allow-model').checked=b.allow_model===true;
   $('role-state').textContent=b.enabled?'已启用':'已停用';$('role-state').classList.toggle('off',!b.enabled);
   $('instructions').textContent=role.instructions;renderModelChoices();renderExecution();updateActions();
@@ -83,9 +88,11 @@ function acceptSnapshot(next){
   renderRoles();if(selected)renderEditor();
 }
 function edit(){
-  const role=currentRole(),next=Object.fromEntries(editable.map(key=>[key,key==='enabled'?$(key).checked:key==='effort'?($(key).value||null):$(key).value]));
+  const role=currentRole(),next=Object.fromEntries(editable.map(key=>[key,key==='enabled'?$(key).checked:['effort','read_mode'].includes(key)?($(key).value||null):$(key).value]));
+  next.budget={...role.binding.budget};
+  for(const key of budgetKeys){const value=Number($(key).value);if(value!==(role.binding.budget?.[key]??snapshot.budget[key]))next.budget[key]=value;}
   next.allow_model=$('allow-model').checked;
-  if(next.allow_model||editable.some(key=>next[key]!==role.binding[key]))drafts.set(role.id,next);else drafts.delete(role.id);
+  if(next.allow_model||[...editable,'budget'].some(key=>JSON.stringify(next[key])!==JSON.stringify(role.binding[key])))drafts.set(role.id,next);else drafts.delete(role.id);
   $('role-state').textContent=next.enabled?'已启用':'已停用';$('role-state').classList.toggle('off',!next.enabled);renderRoles();updateActions();
 }
 for(const key of editable)$(key).addEventListener(key==='model'||key==='effort'?'input':'change',()=>{
@@ -93,6 +100,7 @@ for(const key of editable)$(key).addEventListener(key==='model'||key==='effort'?
   if(key==='model')renderEfforts();if(key==='access'&&$('access').value==='read-only')$('permissions').value='restricted';renderExecution();edit();
 });
 $('allow-model').addEventListener('change',edit);
+for(const key of budgetKeys)$(key).addEventListener('input',edit);
 $('automatic-routing').addEventListener('change',()=>{routingDraft=$('automatic-routing').checked===snapshot.routing.enabled?null:$('automatic-routing').checked;updateActions();});
 $('binding-form').addEventListener('submit',e=>e.preventDefault());
 $('refresh-models').addEventListener('click',async()=>{

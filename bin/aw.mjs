@@ -16,16 +16,17 @@ aw ui [--port PORT] [--host-config FILE]  Local browser editor; loopback only
 aw providers [--refresh] | models PROVIDER [--refresh]
 aw roles | prepare|resolve --role ID|--workflow NAME --cwd PATH [--workspace-mode git-worktree|directory]
 aw configure --role ID --provider ID --model ID --effort LEVEL|--no-effort [--execution host|worker] [--access read-only|workspace-write] [--permissions restricted|full-access] [--allow-model] [--write]
+aw configure --role ID [--read-mode evidence|native] [--budget-file FILE] [--write]
 aw run --role ID|--workflow NAME --cwd PATH --request-file FILE --request-id ID
 aw status|recover|cancel TASK | wait TASK --timeout 45 | result TASK [--cursor 0]
 aw followup TASK --request-file FILE --request-id ID
 aw workspace TASK | apply TASK [--write] | discard TASK [--write]
 Global: --host-config FILE. JSON output. No implicit installation, fallback, or task submission.`;
 try {
-  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','access','permissions','workspace-mode','port','kind','complexity','failed-attempts','delegations'];
+  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','access','permissions','workspace-mode','port','kind','complexity','failed-attempts','delegations','read-mode','budget-file'];
   const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),enable:{type:'boolean'},disable:{type:'boolean'},help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'},'allow-model':{type:'boolean'}}});
   const command=p[0];if(v.help||command==='help'||!command){console.log(HELP);process.exit(0);}
-  const allowed={routing:['enable','disable','write'],route:['kind','complexity','failed-attempts','delegations','cwd'],ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],configure:['role','provider','model','effort','no-effort','execution','access','permissions','allow-model','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
+  const allowed={routing:['enable','disable','write'],route:['kind','complexity','failed-attempts','delegations','cwd'],ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],configure:['role','provider','model','effort','no-effort','execution','access','permissions','allow-model','write','read-mode','budget-file'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
   requireValue(Object.hasOwn(allowed,command),'invalid_command',HELP);
   const positional=['models','status','recover','wait','result','followup','cancel','workspace','apply','discard'].includes(command);
   requireValue(p.length===(positional?2:1),'invalid_input',positional?'Exactly one provider/task ID required':'Unexpected positional arguments');
@@ -78,6 +79,8 @@ try {
     const patch={enabled:true};
     for(const key of ['provider','model','effort','execution','access','permissions'])if(v[key]!==undefined)patch[key]=v[key];
     if(v['no-effort'])patch.effort=null;
+    if(v['read-mode'])patch.read_mode=v['read-mode'];
+    if(v['budget-file'])patch.budget=readJson(path.resolve(v['budget-file']));
     const edited=await editBindings(h.hostFile,{changes:[{role:v.role,patch,allow_model:!!v['allow-model']}],write:!!v.write});
     output={written:edited.written,host_config:h.hostFile,binding:edited.configuration.bindings[v.role],changes:edited.changes,configuration:!v.write?edited.configuration:undefined};
   }

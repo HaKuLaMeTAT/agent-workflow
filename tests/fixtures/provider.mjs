@@ -121,7 +121,7 @@ function data(request,resumed){return {summary:'fixture boundary completed',find
 
 function implementation(before){return {summary:'Implementation prepared for AW verification',findings:[],evidence_refs:['src/math.mjs'],uncertainties:[],payload:{scope:'src',changes:[before.trim()],verification:['AW verification pending'],limitations:[]}};}
 function nativeResult(backend,sessionId,result) {
-  if(backend==='claude')emit({type:'result',is_error:false,session_id:sessionId,structured_output:result});
+  if(backend==='claude')emit({type:'result',is_error:false,session_id:sessionId,structured_output:result,usage:{input_tokens:2,output_tokens:3},total_cost_usd:0.01});
   if(backend==='codex'){emit({type:'item.completed',item:{type:'agent_message',text:JSON.stringify(result)}});emit({type:'turn.completed',usage:{input_tokens:2,output_tokens:3}});}
   if(backend==='opencode'){emit({type:'text',sessionID:sessionId,part:{text:JSON.stringify(result)}});emit({type:'step_finish',sessionID:sessionId,part:{reason:'stop'}});}
 }

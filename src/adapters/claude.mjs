@@ -1,7 +1,7 @@
 import {spawnCli as spawn,stopChild} from '../process.mjs';
 import {createInterface} from 'node:readline';
-import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape} from './common.mjs';
-import {resultSchema} from '../result.mjs';
+import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape,observeTelemetry} from './common.mjs';
+import {deliverySchema} from '../result.mjs';
 import {requireValue} from '../core.mjs';
 const required=['--safe-mode','--restricted','--tools','--strict-mcp-config','--permission-prompts','--json-schema','--resume','--effort'];
 const controls=['--safe-mode','--restricted','--permission-mode','plan','--permission-prompts','none','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--setting-sources',''];
@@ -51,7 +51,8 @@ export const claude={
     requireValue(!full||writing,'permission_unsupported','Full access requires workspace-write');
     const policy=[...controls];if(writing)policy[policy.indexOf('plan')]='dontAsk';
     if(full){policy.splice(policy.indexOf('--restricted'),1);policy[policy.indexOf('dontAsk')]='bypassPermissions';policy.push('--dangerously-skip-permissions');}
-    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...policy,'--tools',full?'Read,Glob,Grep,Edit,Write,Bash,PowerShell,WebFetch,WebSearch':writing?'Read,Glob,Grep,Edit,Write':'Read,Glob,Grep','--json-schema',JSON.stringify(resultSchema(snapshot.role.result_contract))];
+    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...policy,'--tools',!writing&&snapshot.read_mode==='evidence'?'':full?'Read,Glob,Grep,Edit,Write,Bash,PowerShell,WebFetch,WebSearch':writing?'Read,Glob,Grep,Edit,Write':'Read,Glob,Grep','--json-schema',JSON.stringify(deliverySchema(snapshot.role.result_contract))];
+    if(snapshot.remaining_budget)args.push('--max-turns',String(Math.max(1,Math.floor(snapshot.remaining_budget.max_model_turns))));
     if(writing&&!full) {
       const rules=['Read','Glob','Grep'];
       for(const p of snapshot.execution.write_paths)for(const tool of ['Edit','Write'])rules.push(`${tool}(./${p})`,`${tool}(./${p}/**)`);
@@ -62,18 +63,18 @@ export const claude={
     return {command:snapshot.provider.executable,args,env:environment(snapshot.provider),stdin_file:files.prompt};
   },
   async observe(file) {
-    const o=baseObservation();let final;const reads=new Map();
-    for(const e of await events(file)) {
+    const o=baseObservation();let final;const reads=new Map(),list=await events(file);
+    for(const e of list) {
       if(e.type==='system'&&e.subtype==='init'){o.session_id=e.session_id??o.session_id;o.model=e.model??null;o.tools=e.tools??null;}
       if(e.type==='assistant')for(const part of e.message?.content??[])if(part.type==='tool_use'&&part.name==='Read'&&typeof part.input?.file_path==='string')reads.set(part.id,part.input.file_path);
       if(e.type==='user')for(const part of e.message?.content??[])if(part.type==='tool_result'&&!part.is_error&&reads.has(part.tool_use_id))o.reads.push(reads.get(part.tool_use_id));
       if(e.type==='result'){final=e;o.session_id=e.session_id??o.session_id;}
     }
-    if(!final)return o;
+    if(!final)return observeTelemetry(o,list,'claude');
     o.final=true;o.usage=usage(final.usage);o.estimated_cost_usd=Number.isFinite(final.total_cost_usd)?final.total_cost_usd:null;
     if(final.is_error)o.error=errorCode(final.result??final.subtype);
     else if(final.permission_denials?.length)o.error='permission_blocked';
     else try{o.data=final.structured_output??parseObject(final.result);}catch(e){o.error=e.code;}
-    return o;
+    return observeTelemetry(o,list,'claude');
   }
 };

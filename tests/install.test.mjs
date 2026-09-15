@@ -46,7 +46,7 @@ test('install from arbitrary checkout; launch without PATH; re-register moved ch
   const base=temporary(t),root=checkout(base,'checkout one'),unrelated=path.join(base,'unrelated project');fs.mkdirSync(unrelated);
   const source=path.join(root,'config/office.example.json'),hostFile=path.join(base,'private config','host.json'),binDir=path.join(base,'user bin'),skillDir=path.join(base,'codex skills','agent-workflow');
   const installed=await installLocal({source,root,hostFile,binDir,skillDir});
-  assert.equal(installed.version,'0.4.2');assert.equal(fs.lstatSync(skillDir).isSymbolicLink(),false);
+  assert.equal(installed.version,readJson(path.join(root,'package.json')).version);assert.equal(fs.lstatSync(skillDir).isSymbolicLink(),false);
   const manifest=readJson(path.join(skillDir,'installation.json'));
   assert.ok(fs.existsSync(path.join(skillDir,'references/execution.md')));
   assert.equal(manifest.tool_root,root);assert.equal(manifest.node,process.execPath);

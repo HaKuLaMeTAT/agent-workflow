@@ -7,10 +7,15 @@ import {pathToFileURL} from 'node:url';
 import {loadHost} from '../src/config.mjs';
 import {readJson,requireValue,atomicJson} from '../src/core.mjs';
 import {submit,wait,readTask} from '../src/tasks.mjs';
-export function verifySmoke(parsed,{evidenceFile,nonce,model}) {
+export function verifySmoke(parsed,{evidenceFile,nonce,model,readMode='native'}) {
   requireValue(parsed.model===model,'unverified_model','CLI did not confirm the requested model');
-  requireValue(Array.isArray(parsed.tools)&&['Read','Glob','Grep'].every(k=>parsed.tools.includes(k))&&parsed.tools.every(k=>['Read','Glob','Grep','StructuredOutput'].includes(k)),'unverified_tools','Unexpected CLI tool inventory');
-  requireValue(parsed.reads?.some(file=>path.resolve(path.dirname(evidenceFile),file)===evidenceFile),'evidence_not_read','No successful read result for the evidence file');
+  if(readMode==='evidence') {
+    requireValue(Array.isArray(parsed.tools)&&parsed.tools.every(k=>k==='StructuredOutput'),'unverified_tools','Evidence mode exposed unexpected tools');
+    requireValue(parsed.provided_evidence?.files.some(f=>f.path===evidenceFile),'evidence_not_read','Evidence was not included in the bounded bundle');
+  }else {
+    requireValue(Array.isArray(parsed.tools)&&['Read','Glob','Grep'].every(k=>parsed.tools.includes(k))&&parsed.tools.every(k=>['Read','Glob','Grep','StructuredOutput'].includes(k)),'unverified_tools','Unexpected CLI tool inventory');
+    requireValue(parsed.reads?.some(file=>path.resolve(path.dirname(evidenceFile),file)===evidenceFile),'evidence_not_read','No successful read result for the evidence file');
+  }
   requireValue(parsed.data.evidence_refs.some(ref=>ref.includes(nonce)),'evidence_not_read','The evidence-only nonce was not returned');
   requireValue(parsed.data.findings.some(f=>f.severity==='blocker'&&f.trigger.includes('DIVIDE_BY_ZERO')),'acceptance_failed','The required zero-divisor defect was not identified');
   requireValue(parsed.data.payload.verdict!=='pass','acceptance_failed','The known defective interface cannot pass review');
@@ -28,7 +33,7 @@ async function main() {
   do {current=await wait(h,launched.task_id,45);console.log(JSON.stringify(current));}while(current.wait_timed_out&&Date.now()<deadline);
   requireValue(current.state==='completed','smoke_failed',`Live task ended in ${current.state}; retain the task ID and recover explicitly`);
   const m=readTask(h,current.task_id),parsed=readJson(path.join(h.state_dir,'tasks',current.task_id,'result.json'));
-  verifySmoke(parsed,{evidenceFile,nonce,model:m.snapshot.model});
+  verifySmoke(parsed,{evidenceFile,nonce,model:m.snapshot.model,readMode:m.snapshot.read_mode});
   const record={task_id:current.task_id,role,model:parsed.model,tools:parsed.tools,evidence_read:true,contract_check:'passed',effort:m.snapshot.effort,effort_verification:'argv_only',usage:parsed.usage,evidence_directory:root,limitation:'Bounded known-defect acceptance; not a general quality or filesystem-isolation proof'};
   atomicJson(path.join(root,'acceptance.json'),record);console.log(JSON.stringify(record,null,2));
 }

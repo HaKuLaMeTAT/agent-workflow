@@ -35,6 +35,32 @@ export function resultSchema(contract) {
     }};
   return schema;
 }
+// Providers generate one flat object. AW keeps the stable public payload envelope.
+export function deliverySchema(contract) {
+  const schema=resultSchema(contract),payload=schema.properties.payload;
+  if(!payload.properties)return schema;
+  delete schema.properties.payload;
+  schema.required=schema.required.filter(k=>k!=='payload').concat(payload.required);
+  Object.assign(schema.properties,payload.properties);
+  return schema;
+}
+export function normalizeDelivery(value,contract) {
+  let v=value;const repairs=[];
+  for(let n=0;n<2&&v&&typeof v==='object'&&!Array.isArray(v);n++) {
+    const keys=Object.keys(v);
+    if(keys.length===1&&['parameter','parameters','result','payload'].includes(keys[0])&&typeof v[keys[0]]==='object') {
+      repairs.push(`unwrap:${keys[0]}`);v=v[keys[0]];
+    }else break;
+  }
+  if(v&&typeof v==='object'&&!Array.isArray(v)&&!Object.hasOwn(v,'payload')) {
+    const root=RESULT_SCHEMA.required.filter(k=>k!=='payload'),payloadKeys=Object.keys(resultSchema(contract).properties.payload.properties??{});
+    if(payloadKeys.length&&root.every(k=>Object.hasOwn(v,k))&&Object.keys(v).every(k=>root.includes(k)||payloadKeys.includes(k))) {
+      v={...Object.fromEntries(root.map(k=>[k,v[k]])),payload:Object.fromEntries(payloadKeys.filter(k=>Object.hasOwn(v,k)).map(k=>[k,v[k]]))};
+    }
+  }
+  validateResult(v,contract);
+  return {data:v,delivery:{format:'flat-v1',local_repairs:repairs,aw_model_retries:0}};
+}
 export function validateResult(v, contract) {
   fields(v,['summary','findings','evidence_refs','uncertainties','payload'],'result');
   text(v.summary,'summary',1000000);
@@ -59,6 +85,10 @@ export function validateResult(v, contract) {
     text(v.payload.scope,'scope');
     for(const key of ['changes','verification','limitations'])strings(v.payload[key],key);
   }
+  if(['design','analysis'].includes(contract)) {
+    const shape=resultSchema(contract).properties.payload;
+    for(const [key,schema] of Object.entries(shape.properties))schema.type==='array'?strings(v.payload[key],key):text(v.payload[key],key);
+  }
   return v;
 }
 export async function parseTranscript(file, contract) {
@@ -66,7 +96,7 @@ export async function parseTranscript(file, contract) {
   const {claude}=await import('./adapters/claude.mjs');const result=await claude.observe(file);
   requireValue(!result.error,result.error,'Provider failed; inspect retained transcript');
   requireValue(result.final,'invalid_result','No final provider result event');
-  validateResult(result.data,contract);return result;
+  Object.assign(result,normalizeDelivery(result.data,contract));return result;
 }
 export function pageResult(result, limits, cursor) {
   const doc=JSON.stringify(result.data,null,2), chars=Array.from(doc), summary=Array.from(result.data.summary);

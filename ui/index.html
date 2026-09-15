@@ -44,6 +44,20 @@
               <div data-worker-field class="field"><label for="permissions">权限策略</label><select id="permissions"><option value="restricted">受限权限（默认）</option><option value="full-access">完整权限：文件、命令与网络</option></select></div>
               <div class="execution-note full"><span aria-hidden="true">↳</span><p id="execution-note"></p></div>
               <label class="enable-row full" for="enabled"><span><strong>启用这个角色</strong><small>关闭后，新任务不能调用此角色。</small></span><input id="enabled" name="enabled" type="checkbox" role="switch"></label>
+              <details data-worker-field class="field full">
+                <summary>执行预算与读取范围</summary>
+                <div class="field full"><label for="read_mode">读取方式</label><select id="read_mode"><option value="">自动：只读使用证据包，可写使用原生工具</option><option value="evidence">限定文本证据包（只读）</option><option value="native">原生文件工具（约束依 CLI 而定）</option></select></div>
+                <p class="field-help">预算由同一工作包的执行、修正和续接共用。未报告的 token 保持未知；已在途的请求可能超过观测阈值。</p>
+                <div class="budget-grid">
+                  <div class="field"><label for="max_model_turns">模型步骤上限</label><input id="max_model_turns" type="number" min="1" max="1000"></div>
+                  <div class="field"><label for="max_tool_calls">工具调用上限</label><input id="max_tool_calls" type="number" min="1" max="1000"></div>
+                  <div class="field"><label for="max_output_tokens">输出 token 上限</label><input id="max_output_tokens" type="number" min="1" max="1000000"></div>
+                  <div class="field"><label for="max_provider_calls">CLI 执行次数上限</label><input id="max_provider_calls" type="number" min="1" max="1000"></div>
+                  <div class="field"><label for="max_duration_seconds">模型执行时长（秒）</label><input id="max_duration_seconds" type="number" min="1" max="7200"></div>
+                  <div class="field"><label for="max_read_bytes">单份证据上限（字节）</label><input id="max_read_bytes" type="number" min="1" max="16777216"></div>
+                  <div class="field"><label for="max_total_read_bytes">累计读取上限（字节）</label><input id="max_total_read_bytes" type="number" min="1" max="16777216"></div>
+                </div>
+              </details>
             </fieldset>
           </form>
           <details class="instructions"><summary>查看职责与交付要求 <span>只读</span></summary><pre id="instructions"></pre></details>

@@ -8,8 +8,9 @@ import {filePolicy,classifyCall} from './acp-permissions.mjs';
 import {terminals} from './acp-terminals.mjs';
 
 // Small ACP JSON-RPC transport; no daemon and no SDK dependency.
-export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDenied=()=>{},timeout=15000,...permissions}={}) {
+export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDenied=()=>{},timeout=15000,budget,...permissions}={}) {
   const policy=filePolicy(cwd,permissions),calls=new Map(),terminal=terminals(provider,cwd);
+  let readBytes=0;
   const child=spawn(provider.executable,provider.args??[],{cwd,env:environment(provider),stdio:['pipe','pipe','pipe']});
   child.stdin.on('error',()=>{});child.stderr.resume();const pending=new Map();let next=0,bytes=0;
   const closed=new Promise(resolve=>child.once('close',resolve));
@@ -35,9 +36,11 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
           if(!allowed)onDenied(call);
           result={outcome:option?{outcome:'selected',optionId:option.optionId}:{outcome:'cancelled'}};
         } else if(message.method==='fs/read_text_file') {
-          const p=message.params,file=policy.file(p.path),content=readText(file,1024*1024);onRead(file);
+          const p=message.params,file=policy.file(p.path),content=readText(file,budget?.max_read_bytes??1024*1024);
           requireValue((p.line===undefined||Number.isInteger(p.line)&&p.line>=1)&&(p.limit===undefined||Number.isInteger(p.limit)&&p.limit>=0),'permission_blocked','Invalid line range');
           result={content:p.line===undefined&&p.limit===undefined?content:content.split('\n').slice((p.line??1)-1,p.limit===undefined?undefined:(p.line??1)-1+p.limit).join('\n')};
+          const bytes=Buffer.byteLength(result.content);readBytes+=bytes;
+          requireValue(readBytes<=(budget?.max_total_read_bytes??16*1024*1024),'read_budget_exceeded','ACP read budget exceeded');onRead(file,bytes);
         } else if(message.method==='fs/write_text_file') {
           const p=message.params,file=policy.file(p.path,{write:true});
           requireValue(typeof p.content==='string'&&Buffer.byteLength(p.content)<=1024*1024,'permission_blocked','Invalid or oversized file content');
@@ -62,7 +65,7 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
     const timer=setTimeout(()=>stopChild(child,'SIGKILL'),1000);await closed;clearTimeout(timer);
   };
   try {
-    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:policy.writing},terminal:policy.full},clientInfo:{name:'agent-workflow',version:'0.4.2'}});
+    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:policy.reading,writeTextFile:policy.writing},terminal:policy.full},clientInfo:{name:'agent-workflow',version:'0.4.3'}});
     requireValue(initialized.protocolVersion===1,'unsupported_protocol','ACP protocol version is unsupported');
     return {request,close,initialized};
   }catch(e){await close();throw e;}

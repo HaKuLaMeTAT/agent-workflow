@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {connect,catalogOf} from './acp-client.mjs';
-import {environment,events,baseObservation,permissionShape} from './common.mjs';
+import {environment,events,baseObservation,permissionShape,observeTelemetry} from './common.mjs';
 import {requireValue,atomicJson} from '../core.mjs';
 export const acp={
   id:'acp',defaultExecutable:null,
@@ -26,12 +26,12 @@ export const acp={
   prepare(snapshot,files,sessionId) {
     if(snapshot.role.access!=='workspace-write')permissionShape(snapshot.role.access);
     requireValue(snapshot.role.permissions!=='full-access'||snapshot.role.access==='workspace-write','permission_unsupported','Full access requires workspace-write');
-    const config=path.join(files.directory,'acp-request.json');atomicJson(config,{provider:snapshot.provider,cwd:snapshot.cwd,model:snapshot.model,effort:snapshot.effort,session_id:sessionId,access:snapshot.role.access,permissions:snapshot.role.permissions,write_paths:snapshot.execution?.write_paths??[]});
+    const config=path.join(files.directory,'acp-request.json');atomicJson(config,{provider:snapshot.provider,cwd:snapshot.cwd,model:snapshot.model,effort:snapshot.effort,session_id:sessionId,access:snapshot.role.access,permissions:snapshot.role.permissions,write_paths:snapshot.execution?.write_paths??[],read_paths:snapshot.request?.read_paths,read_mode:snapshot.read_mode,budget:snapshot.remaining_budget});
     return {command:process.execPath,args:[path.join(import.meta.dirname,'acp-worker.mjs'),config],env:environment(snapshot.provider),stdin_file:files.prompt};
   },
   async observe(file) {
-    const o=baseObservation();
-    for(const e of await events(file))if(e.type==='aw_acp')Object.assign(o,e.observation);
-    return o;
+    const o=baseObservation(),list=await events(file);
+    for(const e of list)if(e.type==='aw_acp')Object.assign(o,e.observation);
+    return observeTelemetry(o,list,'acp');
   }
 };

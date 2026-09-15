@@ -4,6 +4,8 @@ import {fields,text,strings,id,integer,requireValue,real,readJson,readText,hash,
 import {executable} from './adapters/common.mjs';
 import {checkRuntime} from './runtime.mjs';
 import {userPaths} from './paths.mjs';
+import {budgetPolicy} from './budget.mjs';
+import {controlDescription} from './worker-policy.mjs';
 
 export const TOOL_ROOT=path.resolve(import.meta.dirname,'..');
 const DEFAULT_LIMITS={max_active_workers:2,default_timeout_seconds:1200,summary_max_chars:4000,result_page_max_chars:8000};
@@ -15,7 +17,8 @@ export function loadHost(file) {
 // In-memory previews use the same validation and path resolution as normal CLI reads.
 export function parseHost(hostFile,h) {
   const base=path.dirname(hostFile);
-  fields(h,['schema_version','host_id','catalog','providers','bindings','limits','state_dir','upstream_dir','routing'],'host');
+  fields(h,['schema_version','host_id','catalog','providers','bindings','limits','state_dir','upstream_dir','routing','budget'],'host');
+  const budget=budgetPolicy(h.budget);
   requireValue(h.schema_version===1,'invalid_config','Expected host schema_version 1');id(h.host_id,'host_id');
   const catalogFile=real(path.resolve(base,text(h.catalog,'catalog'))),c=readJson(catalogFile);
   fields(c,['schema_version','roles'],'catalog');requireValue(c.schema_version===1,'invalid_config','Expected catalog schema_version 1');object(c.roles,'roles');
@@ -47,12 +50,15 @@ export function parseHost(hostFile,h) {
   }
   for(const [key,b] of Object.entries(h.bindings)) {
     requireValue(roles[key],'invalid_config',`Unknown role ${key}`);
-    fields(b,['provider','model','effort','enabled','execution','access','permissions'],`binding.${key}`);
+    fields(b,['provider','model','effort','enabled','execution','access','permissions','budget','read_mode'],`binding.${key}`);
+    if(b.budget!==undefined)budgetPolicy(b.budget,budget);
+    if(b.read_mode!==undefined)requireValue(['evidence','native'].includes(b.read_mode),'invalid_config','read_mode must be evidence or native');
     requireValue(typeof b.enabled==='boolean','invalid_config','enabled must be boolean');
     if(b.execution!==undefined)requireValue(['host','worker'].includes(b.execution),'invalid_config','Invalid execution');
     if(b.access!==undefined)requireValue(b.access===roles[key].access||b.access==='read-only','permission_escalation','Binding cannot widen role access');
     requireValue(['restricted','full-access'].includes(b.permissions??'restricted'),'invalid_config','permissions must be restricted or full-access');
     const access=b.access??((b.execution??roles[key].execution)==='worker'&&roles[key].execution==='host'?'read-only':roles[key].access);
+    requireValue(access==='read-only'||b.read_mode!=='evidence','invalid_config','Evidence mode is only available to read-only roles');
     if(b.permissions==='full-access')requireValue(roles[key].result_contract==='implementation'&&access==='workspace-write','permission_escalation','Full access requires an implementation role with workspace-write access');
     if(!b.enabled)continue;
     // The current host already has a runtime/model; it needs no external binding.
@@ -69,7 +75,7 @@ export function parseHost(hostFile,h) {
   const routing={enabled:h.routing?.enabled??false,roles:routeRoles,escalate_after:h.routing?.escalate_after??2,max_delegations:h.routing?.max_delegations??3};
   requireValue(typeof routing.enabled==='boolean','invalid_config','routing.enabled must be boolean');
   integer(routing.escalate_after,1,5,'escalate_after');integer(routing.max_delegations,1,20,'max_delegations');
-  return {hostFile,host_id:h.host_id,roles,providers,bindings:h.bindings,limits,routing,
+  return {hostFile,host_id:h.host_id,roles,providers,bindings:h.bindings,limits,routing,budget,
     state_dir:path.resolve(base,h.state_dir??path.join(userPaths().state,h.host_id)),
     upstream_dir:path.resolve(base,h.upstream_dir??path.join(TOOL_ROOT,'.runtime/node_modules/ai-cli-mcp'))};
 }
@@ -125,7 +131,8 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
   const binary=host?null:executable(provider.executable),runtime=checkRuntime(h.upstream_dir);
   const snapshot={host_id:h.host_id,role_id:roleId,provider_id:host?null:binding.provider,role:{...role,instructions:readText(role.instructions)},
     provider:host?null:{...provider,executable:binary??provider.executable},model,effort,cwd:project.cwd,project_root:project.root,workflow:overrides.workflow??null,
-    project_policy_files:project.files,project_instructions:project.instructions.map(file=>({path:file,text:readText(file)})),limits:h.limits};
+    project_policy_files:project.files,project_instructions:project.instructions.map(file=>({path:file,text:readText(file)})),limits:h.limits,
+    budget:budgetPolicy(binding.budget,h.budget),read_mode:binding.read_mode??(role.access==='read-only'?'evidence':'native')};
   return {...snapshot,config_hash:hash(snapshot),runnable:false,runtime,
     unavailable_reason:execution==='host'?'host_role_use_current_agent':!binary?'missing_executable':!runtime.available?'upstream_not_installed_or_patched':'capability_probe_required',
     guarantee:host?'Use the current conversation; AW does not select its model or execution permissions':'Not probed; configuration is not proof of executable capability'};
@@ -133,5 +140,5 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
 export function publicRole(r,{instructions=false}={}) {
   return {role:r.role_id,label:r.role.label,execution:r.role.execution,access:r.role.access,permissions:r.role.execution==='host'?null:r.role.permissions,provider:r.provider_id,adapter:r.provider?.adapter??null,model:r.model,effort:r.effort,
     runnable:r.runnable,reason:r.unavailable_reason,guarantee:r.guarantee,workspace_mode:r.role.execution==='worker'&&r.role.access==='workspace-write'?r.workspace_mode??null:null,config_hash:r.config_hash,cwd:r.cwd,project_root:r.project_root,workflow:r.workflow,
-    discovery:r.discovery??null,...(instructions?{instructions:r.role.instructions,project_instructions:r.project_instructions}: {})};
+    budget:r.budget,read_mode:r.read_mode,controls:r.provider?controlDescription(r.provider.adapter,r.read_mode):null,discovery:r.discovery??null,...(instructions?{instructions:r.role.instructions,project_instructions:r.project_instructions}: {})};
 }

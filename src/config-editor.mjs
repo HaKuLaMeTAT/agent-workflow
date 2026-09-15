@@ -2,18 +2,18 @@ import {loadHost,parseHost} from './config.mjs';
 import {readJson,readText,fields,text,requireValue,hash,atomicJson} from './core.mjs';
 import {withFileLock} from './locking.mjs';
 
-const EDITABLE=['provider','model','effort','enabled','execution','access','permissions'];
+const EDITABLE=['provider','model','effort','enabled','execution','access','permissions','budget','read_mode'];
 function effectiveBinding(h,id) {
   const b=h.bindings[id]??{},r=h.roles[id];
   const execution=b.execution??r.execution;
-  return {provider:b.provider??'',model:b.model??'',effort:b.effort??null,enabled:b.enabled??false,execution,access:b.access??(execution==='worker'&&r.execution==='host'?'read-only':r.access),permissions:b.permissions??'restricted'};
+  return {provider:b.provider??'',model:b.model??'',effort:b.effort??null,enabled:b.enabled??false,execution,access:b.access??(execution==='worker'&&r.execution==='host'?'read-only':r.access),permissions:b.permissions??'restricted',budget:b.budget??{},read_mode:b.read_mode??null};
 }
 export function configurationSnapshot(file) {
   const hostFile=loadHost(file).hostFile,raw=readJson(hostFile),host=parseHost(hostFile,raw);
   const roles=Object.entries(host.roles).map(([id,r])=>({id,label:r.label,description:r.description,instructions:readText(r.instructions),access:r.access,binding:effectiveBinding(host,id)}));
   const revision=hash({raw,roles});
   return {host,raw,revision,view:{host_id:host.host_id,host_config:hostFile,revision,roles,
-    providers:Object.entries(host.providers).map(([id,p])=>({id,adapter:p.adapter,executable:p.executable,has_allowlist:p.models!==undefined,models:Object.entries(p.models??{}).map(([id,efforts])=>({id,efforts,allowed:true,verified:false,source:'configured'}))})),limits:host.limits,routing:host.routing}};
+    providers:Object.entries(host.providers).map(([id,p])=>({id,adapter:p.adapter,executable:p.executable,has_allowlist:p.models!==undefined,models:Object.entries(p.models??{}).map(([id,efforts])=>({id,efforts,allowed:true,verified:false,source:'configured'}))})),limits:host.limits,routing:host.routing,budget:host.budget}};
 }
 
 // One host file is the transaction boundary; both the CLI and UI use this writer.
@@ -35,6 +35,7 @@ export async function editBindings(file,{changes=[],routing,revision,write=false
       if(Object.hasOwn(change.patch,'model'))text(change.patch.model,'model');
       if(Object.hasOwn(change.patch,'effort')&&change.patch.effort!==null)text(change.patch.effort,'effort');
       next.bindings[change.role]={...next.bindings[change.role],...change.patch};
+      if(change.patch.read_mode===null)delete next.bindings[change.role].read_mode;
       if(change.allow_model) {
         const b=next.bindings[change.role],provider=next.providers[b.provider];
         requireValue(provider,'invalid_config','Unknown provider');text(b.model,'model');
@@ -49,7 +50,7 @@ export async function editBindings(file,{changes=[],routing,revision,write=false
       const before=effectiveBinding(current.host,role),after=effectiveBinding(validated,role),b=validated.bindings[role],defaults=validated.roles[role];
       const access=b.access??(after.execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access);
       requireValue(!after.enabled||after.execution!=='worker'||access==='read-only'||defaults.result_contract==='implementation','permission_unsupported','可写执行模式需要 implementation 结果合同。');
-      for(const field of EDITABLE)if(before[field]!==after[field])diff.push({role,label:defaults.label,field,before:before[field],after:after[field]});
+      for(const field of EDITABLE)if(JSON.stringify(before[field])!==JSON.stringify(after[field]))diff.push({role,label:defaults.label,field,before:before[field],after:after[field]});
     }
     for(const [id,p] of Object.entries(next.providers))if(JSON.stringify(p.models)!==JSON.stringify(current.raw.providers[id].models))diff.push({role:`provider:${id}`,label:`CLI ${id}`,field:'models',before:current.raw.providers[id].models,after:p.models});
     if(routing!==undefined)for(const field of ['enabled','roles','escalate_after','max_delegations'])if(JSON.stringify(current.host.routing[field])!==JSON.stringify(validated.routing[field]))diff.push({role:'routing',label:'主控调度',field,before:current.host.routing[field],after:validated.routing[field]});

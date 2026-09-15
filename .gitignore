@@ -20,6 +20,7 @@
 /docs/*
 !/docs/INSTALL.md
 !/docs/UPSTREAM.md
+!/docs/WORKER_LIMITS.md
 /config/*
 !/config/*.example.json
 !/config/roles.json

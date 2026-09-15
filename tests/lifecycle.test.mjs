@@ -36,6 +36,17 @@ function fixture(t) {
   return {root,file,h};
 }
 const request=(goal,timeout_seconds=10)=>({goal,acceptance:['return a structured result'],read_paths:[],source:'integration',timeout_seconds});
+test('work-package budget: explicit followups cannot reset provider calls or widen limits',options,async t=>{
+  const {root,h}=fixture(t);h.bindings.reviewer.budget={max_provider_calls:2};
+  const first=await submit(h,{role:'reviewer',cwd:root,raw:request('first'),requestId:'budget-first'});
+  assert.equal((await wait(h,first.task_id,15)).state,'completed');
+  const next=await submit(h,{parentId:first.task_id,raw:request('followup'),requestId:'budget-next'});
+  const final=await wait(h,next.task_id,15);assert.equal(final.state,'completed');assert.equal(final.remaining_budget.max_provider_calls,0);
+  assert.ok(fs.existsSync(path.join(h.state_dir,'tasks',next.task_id,'usage.json')));
+  await assert.rejects(submit(h,{parentId:next.task_id,raw:request('again'),requestId:'budget-third'}),{code:'budget_exhausted'});
+  await assert.rejects(submit(h,{parentId:next.task_id,raw:{...request('widen'),budget:{max_provider_calls:3}},requestId:'budget-widen'}),{code:'budget_widened'});
+  assert.equal(fs.readdirSync(path.join(h.state_dir,'tasks')).length,2);
+});
 async function childPid(root) {
   for(let i=0;i<150;i++){const f=path.join(root,'descendant.pid');if(fs.existsSync(f))return Number(fs.readFileSync(f,'utf8'));await sleep(100);}
   throw new Error('Provider did not create descendant');

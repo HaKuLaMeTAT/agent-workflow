@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.4.2）
+# 安装与本机配置（v0.4.3）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -221,3 +221,9 @@ node scripts/live-smoke.mjs --run reviewer
 运行时、真实配置、凭据和任务日志不属于公开源码。凭据由目标 CLI 管理；Windows 子进程继承必要的用户配置目录与系统环境，不转发 API key。
 
 `private: true` 防止意外发布到 npm，不限制源码分发。`npm pack --dry-run` 可核对包内容；打包不会安装 AI CLI 或调用模型。
+
+## v0.4.3 升级
+
+更新仓库后运行 `node scripts/install-local.mjs --apply --update`，刷新主入口读取的 AW Skill。主机现有模型、档位和权限配置继续保留；新 worker 采用默认预算，只读任务默认使用限定文本证据包。需要原生文件探索的角色可以在 `aw ui` 的“执行预算与读取范围”中配置。旧原生会话续接应显式使用 `read_mode: native`。
+
+迁移注意项与跨 CLI 的强制能力见 [worker 限制说明](WORKER_LIMITS.md)。

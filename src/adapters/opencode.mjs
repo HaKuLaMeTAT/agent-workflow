@@ -1,14 +1,18 @@
 import path from 'node:path';
-import {command,environment,events,baseObservation,errorCode,parseObject,jsonObjects,permissionShape} from './common.mjs';
+import {command,environment,events,baseObservation,errorCode,parseObject,jsonObjects,permissionShape,observeTelemetry} from './common.mjs';
 import {requireValue} from '../core.mjs';
 const policy={'*':'deny',read:'allow',glob:'allow',grep:'allow',list:'allow',external_directory:'deny'};
 function env(provider,root,snapshot) {
   const writing=snapshot?.role.access==='workspace-write',full=snapshot?.role.permissions==='full-access',name=writing?'aw-executor':'aw-readonly';
   const edit={'*':'deny'};
   if(writing)for(const p of snapshot.execution.write_paths)for(const prefix of [p,path.resolve(snapshot.cwd,p).replaceAll('\\','/')]){edit[prefix]='allow';edit[`${prefix}/*`]='allow';}
-  const permissions=full?{'*':'allow',task:'deny',question:'deny',skill:'deny'}:writing?{...policy,edit}:policy;
+  const reads={'*':'deny'};
+  for(const p of snapshot?.request?.read_paths??[]) {reads[p.replaceAll('\\','/')]='allow';reads[p.replaceAll('\\','/')+'/*']='allow';}
+  for(const p of snapshot?.execution?.write_paths??[]) {reads[p]='allow';reads[p+'/*']='allow';}
+  const scoped=snapshot?.request?{...policy,read:reads,glob:reads,grep:reads,list:reads}:policy;
+  const permissions=!writing&&snapshot?.read_mode==='evidence'?{'*':'deny'}:full?{'*':'allow',task:'deny',question:'deny',skill:'deny'}:writing?{...scoped,edit}:scoped;
   return {...environment(provider),XDG_CONFIG_HOME:path.join(root,'opencode-config'),OPENCODE_PURE:'1',OPENCODE_DISABLE_PROJECT_CONFIG:'1',OPENCODE_DISABLE_AUTOUPDATE:'1',OPENCODE_DISABLE_EXTERNAL_SKILLS:'1',OPENCODE_DISABLE_CLAUDE_CODE:'1',OPENCODE_DISABLE_LSP_DOWNLOAD:'1',OPENCODE_AUTO_SHARE:'false',
-    OPENCODE_CONFIG_CONTENT:JSON.stringify({share:'disabled',plugin:[],mcp:{},permission:permissions,agent:{[name]:{mode:'primary',description:writing?'Bounded implementation task':'Read-only delegated task',permission:permissions}}})};
+    OPENCODE_CONFIG_CONTENT:JSON.stringify({share:'disabled',plugin:[],mcp:{},permission:permissions,agent:{[name]:{mode:'primary',description:writing?'Bounded implementation task':'Read-only delegated task',permission:permissions,...(snapshot?.remaining_budget?{steps:Math.max(1,Math.floor(snapshot.remaining_budget.max_model_turns))}:{})}}})};
 }
 export const opencode={
   id:'opencode',defaultExecutable:'opencode',
@@ -35,8 +39,8 @@ export const opencode={
     return {command:snapshot.provider.executable,args,env:env(snapshot.provider,files.directory,snapshot),stdin_file:files.prompt};
   },
   async observe(file) {
-    const o=baseObservation();let text='';
-    for(const e of await events(file)) {
+    const o=baseObservation();let text='';const list=await events(file);
+    for(const e of list) {
       o.session_id=e.sessionID??o.session_id;
       if(e.type==='text')text+=e.part?.text??'';
       if(e.type==='step_start'){text='';const m=e.part?.model;if(m?.providerID&&m?.modelID)o.model=`${m.providerID}/${m.modelID}`;}
@@ -52,6 +56,6 @@ export const opencode={
       if(e.type==='error')o.error=errorCode(e.error?.data?.message??e.error?.message??JSON.stringify(e.error));
     }
     if(o.final&&!o.error)try{o.data=parseObject(text);}catch(e){o.error=e.code;}
-    return o;
+    return observeTelemetry(o,list,'opencode');
   }
 };
