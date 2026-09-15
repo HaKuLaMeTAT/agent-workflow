@@ -1,16 +1,15 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import {fields,text,strings,id,integer,requireValue,real,readJson,readText,hash,within,object} from './core.mjs';
 import {executable} from './adapters/common.mjs';
 import {checkRuntime} from './runtime.mjs';
+import {userPaths} from './paths.mjs';
 
 export const TOOL_ROOT=path.resolve(import.meta.dirname,'..');
 const DEFAULT_LIMITS={max_active_workers:2,default_timeout_seconds:1200,summary_max_chars:4000,result_page_max_chars:8000};
 const ADAPTERS=['claude','codex','opencode','dsh','acp'];
 export function loadHost(file) {
-  const defaultPath=process.platform==='win32'?path.join(process.env.LOCALAPPDATA||os.homedir(),'agent-workflow/host.json'):path.join(os.homedir(),'.config/agent-workflow/host.json');
-  const hostFile=real(file||process.env.AW_HOST_CONFIG||defaultPath);
+  const hostFile=real(file||process.env.AW_HOST_CONFIG||userPaths().host);
   return parseHost(hostFile,readJson(hostFile));
 }
 // In-memory previews use the same validation and path resolution as normal CLI reads.
@@ -34,7 +33,7 @@ export function parseHost(hostFile,h) {
     id(key,'provider ID');fields(p,['adapter','executable','args','auth','models','inherit_env','catalog_filter'],`provider.${key}`);
     requireValue(ADAPTERS.includes(p.adapter),'unsupported_adapter',`Unknown adapter ${p.adapter}`);
     const command=text(p.executable??(p.adapter==='acp'?'':p.adapter),'executable');
-    requireValue(path.isAbsolute(command)||!command.includes(path.sep),'invalid_config','Use an absolute executable or a PATH command');
+    requireValue(path.isAbsolute(command)||!/[\\/]/.test(command),'invalid_config','Use an absolute executable or a PATH command');
     requireValue(p.auth==='cli-managed','invalid_config','Only cli-managed authentication is supported');
     const args=p.args??(p.adapter==='dsh'?['--profile','acp']:[]);
     requireValue(Array.isArray(args)&&args.length<=20,'invalid_config','args must contain at most 20 entries');args.forEach(x=>text(x,'arg',4000));
@@ -59,7 +58,7 @@ export function parseHost(hostFile,h) {
   integer(limits.max_active_workers,1,8,'max_active_workers');integer(limits.default_timeout_seconds,1,7200,'default_timeout_seconds');
   integer(limits.summary_max_chars,100,8000,'summary_max_chars');integer(limits.result_page_max_chars,100,32000,'result_page_max_chars');
   return {hostFile,host_id:h.host_id,roles,providers,bindings:h.bindings,limits,
-    state_dir:path.resolve(base,h.state_dir??path.join(os.homedir(),'.local/state/agent-workflow',h.host_id)),
+    state_dir:path.resolve(base,h.state_dir??path.join(userPaths().state,h.host_id)),
     upstream_dir:path.resolve(base,h.upstream_dir??path.join(TOOL_ROOT,'.runtime/node_modules/ai-cli-mcp'))};
 }
 function validateModel(provider,model,effort) {

@@ -8,6 +8,13 @@
   },
   "patched_sha256": {
     "dist/cli-process-service.js": "d4f49916d81fe3103ee6f0c2a4e5ae45e5ce8728eadc22612d8da8acb8187f59",
+    "dist/detached-runner.cjs": "946e86c11fe1cf028111b6fc598201b61cc0b36360b891711623663b6c2c0a0a",
+    "dist/aw-platform.cjs": "a61bb9f7a7025dc8b375ab933a059ca8a656130f9edc4dc865544f3f022f4201",
+    "dist/aw-windows-job.ps1": "f577a65fd56e96c27018c936c6a36d254f380f6d330e77af67a6365499cf4a34",
+    "dist/aw-spawn.cjs": "095ce77e3640625054d32e5404747e79452a4a38c262ee0fbcc0e36731c1cefa"
+  },
+  "previous_patched_sha256": {
+    "dist/cli-process-service.js": "d4f49916d81fe3103ee6f0c2a4e5ae45e5ce8728eadc22612d8da8acb8187f59",
     "dist/detached-runner.cjs": "886872bfe7675b90bea34515669e6bd43a9e82cb92ef2d19e0d6ec72bc1d2b46"
   }
 }

@@ -3,7 +3,9 @@ name: agent-workflow
 description: Delegate a bounded design, independent review, or peer analysis to a configured local AI CLI through Agent Workflow when the user requests collaboration or an established project workflow calls for it. Ordinary development does not automatically start workers.
 ---
 
-Use `aw` from PATH. Otherwise use the configured checkout (`AW_ROOT`) via `node "$AW_ROOT/bin/aw.mjs"`. The default host file is `~/.config/agent-workflow/host.json`; `AW_HOST_CONFIG` or `--host-config FILE` overrides it. If the entrypoint is absent, locate the user's configured checkout before running. Do not install or enable providers implicitly.
+<!-- installation -->
+
+Use the installed entrypoint above when present. Otherwise run `node` with the absolute path to [aw.mjs](aw.mjs) beside this SKILL.md; locate it relative to this skill's path, not the current working directory. It resolves the registered checkout and host file. `AW_ROOT` overrides the checkout; `AW_HOST_CONFIG` or `--host-config FILE` overrides the host file. Defaults are `~/.config/agent-workflow/host.json` on Linux/WSL and `%LOCALAPPDATA%/agent-workflow/host.json` on Windows. Do not install or enable providers implicitly.
 
 Use `prepare --workflow NAME --cwd PROJECT` when the project has an established workflow mapping; otherwise use `prepare --role ROLE --cwd PROJECT`. It returns the effective binding and only that role's instructions plus applicable project instructions. Follow the returned instructions in the current task for a host role; for a runnable worker role, submit with the same workflow or role. Do not reread every role or the design documents. `roles` gives compact choices when selection is needed.
 

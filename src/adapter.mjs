@@ -7,6 +7,7 @@ import {acp} from './adapters/acp.mjs';
 import {executable,declaredModels} from './adapters/common.mjs';
 import {resultSchema} from './result.mjs';
 import {requireValue,readJson,real,within,fields,text,strings,hash,atomicJson} from './core.mjs';
+import platform from './platform.cjs';
 export {upstreamService} from './runtime.mjs';
 const adapters={claude,codex,opencode,acp,dsh:acp};
 export function getAdapter(name) {requireValue(adapters[name],'unsupported_adapter',`Unknown adapter ${name}`);return adapters[name];}
@@ -35,7 +36,9 @@ export async function discover(h,providerId,{cwd=process.cwd(),catalog=false,ref
 }
 export async function prepareRole(h,snapshot,{refresh=false}={}) {
   if(snapshot.role.execution==='host')return snapshot;
-  if(process.platform!=='linux'||!executable('flock'))return {...snapshot,runnable:false,unavailable_reason:process.platform!=='linux'?'platform_unverified':'flock_unavailable'};
+  if(!['linux','win32'].includes(process.platform))return {...snapshot,runnable:false,unavailable_reason:'platform_unverified'};
+  if(process.platform==='linux'&&!executable('flock'))return {...snapshot,runnable:false,unavailable_reason:'flock_unavailable'};
+  if(process.platform==='win32'&&!executable(platform.powershell()))return {...snapshot,runnable:false,unavailable_reason:'powershell_unavailable'};
   const discovery=await discover(h,snapshot.provider_id,{cwd:snapshot.cwd,catalog:true,refresh});
   const model=discovery.models.find(m=>m.id===snapshot.model);
   let reason=null;

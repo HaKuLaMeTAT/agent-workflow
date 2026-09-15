@@ -5,6 +5,8 @@
 !/README.md
 !/LICENSE
 !/package.json
+!/package-lock.json
+!/.github/
 !/bin/
 !/src/
 !/ui/

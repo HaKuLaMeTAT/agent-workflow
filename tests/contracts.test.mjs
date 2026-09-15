@@ -62,7 +62,7 @@ test('request and adapter boundary: no shell, no inherited API credential, no se
   const dir=temporary(t), h=loadHost(path.join(TOOL_ROOT,'config/home.example.json'));
   const s=resolveRole(h,'reviewer',dir);
   fs.writeFileSync(path.join(dir,'evidence.txt'),'evidence');
-  fs.symlinkSync(os.tmpdir(),path.join(dir,'outside'));
+  fs.symlinkSync(os.tmpdir(),path.join(dir,'outside'),process.platform==='win32'?'junction':'dir');
   assert.throws(()=>prepareRequest(s,{goal:'review',acceptance:['valid'],read_paths:['outside']}),{code:'path_not_allowed'});
   const request=prepareRequest(s,{goal:'literal `$(not-a-command)`',acceptance:['valid'],read_paths:['evidence.txt']});
   assert.ok(request.prompt.includes('$(not-a-command)'));

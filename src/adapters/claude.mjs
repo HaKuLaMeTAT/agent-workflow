@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process';
+import {spawnCli as spawn,stopChild} from '../process.mjs';
 import {createInterface} from 'node:readline';
 import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape} from './common.mjs';
 import {resultSchema} from '../result.mjs';
@@ -30,8 +30,8 @@ async function catalog(provider,cwd) {
       child.stdin.write(JSON.stringify({type:'control_request',request_id:'aw-catalog',request:{subtype:'initialize',hooks:{},sdkMcpServers:[],agents:{},skills:[],promptSuggestions:false}})+'\n');
     });
   } finally {
-    lines?.close();child.stdin.end();child.kill('SIGTERM');
-    const kill=setTimeout(()=>child.kill('SIGKILL'),1000);await closed;clearTimeout(kill);
+    lines?.close();child.stdin.end();stopChild(child);
+    const kill=setTimeout(()=>stopChild(child,'SIGKILL'),1000);await closed;clearTimeout(kill);
   }
 }
 export const claude={

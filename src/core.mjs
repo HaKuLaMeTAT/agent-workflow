@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import platform from './platform.cjs';
 
 export class AwError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -36,7 +37,7 @@ export function strings(v, where) {
 export function readJson(file, max = 1024 * 1024) {
   try {
     requireValue(fs.statSync(file).size <= max, 'input_too_large', `File exceeds ${max} bytes: ${file}`);
-    const source = fs.readFileSync(file, 'utf8'), parsed = JSON.parse(source);
+    const source = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''), parsed = JSON.parse(source);
     // JSON.parse accepts duplicate keys. Reject ambiguous configuration and request documents.
     const tokens = source.match(/"(?:\\.|[^"\\])*"|[{}\[\]:,]/g) ?? [], stack = [];
     for (let i=0;i<tokens.length;i++) {
@@ -74,14 +75,6 @@ export function atomicJson(file, value) {
 }
 export function within(root, file) { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel)); }
 export function real(file) { try { return fs.realpathSync(file); } catch { fail('missing_path', `Path does not exist: ${file}`); } }
-export function processIdentity(pid) {
-  if (process.platform !== 'linux') return null;
-  try {
-    const raw = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const parts = raw.slice(raw.lastIndexOf(')') + 2).split(' ');
-    if (parts[0] === 'Z') return null;
-    return {pid, start_ticks: parts[19], boot_id: fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()};
-  } catch { return null; }
-}
+export const processIdentity=platform.processIdentity;
 export function sameProcess(identity) { return identity && JSON.stringify(processIdentity(identity.pid)) === JSON.stringify(identity); }
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import {spawn} from 'node:child_process';
+import {spawnCli as spawn,stopChild} from '../process.mjs';
 import {createInterface} from 'node:readline';
 import {AwError,requireValue,within,real,readText} from '../core.mjs';
 import {environment} from './common.mjs';
@@ -16,7 +16,7 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
   function safeFile(value) {requireValue(typeof value==='string','permission_blocked','No file path');const file=real(path.resolve(cwd,value));requireValue(within(cwd,file),'permission_blocked','File is outside workspace');return file;}
   const lines=createInterface({input:child.stdout});
   lines.on('line',line=>{
-    bytes+=line.length;if(bytes>16*1024*1024||line.length>2*1024*1024){failAll(new AwError('output_too_large','ACP output limit exceeded'));child.kill('SIGTERM');return;}
+    bytes+=line.length;if(bytes>16*1024*1024||line.length>2*1024*1024){failAll(new AwError('output_too_large','ACP output limit exceeded'));stopChild(child);return;}
     let message;try{message=JSON.parse(line);}catch{return;}
     if(message.method) {
       if(message.id===undefined){if(message.method==='session/update')onUpdate(message.params);return;}
@@ -43,11 +43,11 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
     pending.set(id,{resolve,reject,timer});write({id,method,params});
   });
   const close=async()=>{
-    failAll(new AwError('acp_closed','ACP client closed'));lines.close();child.stdin.end();child.kill('SIGTERM');
-    const timer=setTimeout(()=>child.kill('SIGKILL'),1000);await closed;clearTimeout(timer);
+    failAll(new AwError('acp_closed','ACP client closed'));lines.close();child.stdin.end();stopChild(child);
+    const timer=setTimeout(()=>stopChild(child,'SIGKILL'),1000);await closed;clearTimeout(timer);
   };
   try {
-    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:false},terminal:false},clientInfo:{name:'agent-workflow',version:'0.2.0'}});
+    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:false},terminal:false},clientInfo:{name:'agent-workflow',version:'0.3.0'}});
     requireValue(initialized.protocolVersion===1,'unsupported_protocol','ACP protocol version is unsupported');
     return {request,close,initialized};
   }catch(e){await close();throw e;}

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {execFile} from 'node:child_process';
-import {promisify} from 'node:util';
+import {spawnCli,stopChild} from '../process.mjs';
 import {AwError,requireValue} from '../core.mjs';
-const exec=promisify(execFile);
+const envValue=key=>process.env[Object.keys(process.env).find(k=>process.platform==='win32'?k.toUpperCase()===key.toUpperCase():k===key)];
 export function executable(command) {
-  const candidates=path.isAbsolute(command)?[command]:(process.env.PATH??'').split(path.delimiter).map(dir=>path.join(dir,command));
+  const windows=process.platform==='win32';
+  const extensions=(envValue('PATHEXT')||'.COM;.EXE;.BAT;.CMD').split(';').filter(x=>/^\.[a-z0-9]+$/i.test(x));
+  const names=windows&&!extensions.some(ext=>command.toLowerCase().endsWith(ext.toLowerCase()))?extensions.map(ext=>command+ext):[command];
+  const candidates=path.isAbsolute(command)?names:(envValue('PATH')??'').split(path.delimiter).filter(Boolean).flatMap(dir=>names.map(name=>path.join(dir.replace(/^"|"$/g,''),name)));
   for(const candidate of candidates) {
     try {fs.accessSync(candidate,fs.constants.X_OK);if(fs.statSync(candidate).isFile())return fs.realpathSync(candidate);}catch{}
   }
@@ -13,14 +15,26 @@ export function executable(command) {
 }
 export function environment(provider) {
   const env={};
-  for(const key of ['HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR','PATH',...(provider.inherit_env??[])])if(process.env[key])env[key]=process.env[key];
+  for(const key of ['HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR','PATH','CODEX_HOME','USERPROFILE','APPDATA','LOCALAPPDATA','SystemRoot','WINDIR','ComSpec','PATHEXT','TEMP','TMP','HOMEDRIVE','HOMEPATH',...(provider.inherit_env??[])])if(envValue(key))env[key]=envValue(key);
   env.PATH=[path.dirname(provider.executable),path.dirname(process.execPath),env.PATH].filter(Boolean).join(path.delimiter);
   env.AW_WORKER='1';
   return env;
 }
 export async function command(provider,args,{cwd,env,timeout=12000,maxBuffer=4*1024*1024}={}) {
   try {
-    return await exec(provider.executable,[...(provider.args??[]),...args],{cwd,env:env??environment(provider),encoding:'utf8',timeout,maxBuffer});
+    return await new Promise((resolve,reject)=>{
+      const child=spawnCli(provider.executable,[...(provider.args??[]),...args],{cwd,env:env??environment(provider),stdio:['ignore','pipe','pipe']});
+      const output={stdout:[],stderr:[]};let bytes=0,failure;
+      const stop=code=>{failure??=new AwError(code,code);stopChild(child,'SIGKILL');};
+      const timer=setTimeout(()=>stop('probe_timeout'),timeout);
+      for(const key of ['stdout','stderr'])child[key].on('data',data=>{bytes+=data.length;if(bytes>maxBuffer)stop('output_too_large');else output[key].push(data);});
+      child.once('error',error=>{failure=error;});
+      child.once('close',(code,signal)=>{
+        clearTimeout(timer);
+        if(failure||code!==0)reject(failure??new AwError(signal??String(code),'CLI exited'));
+        else resolve(Object.fromEntries(Object.entries(output).map(([key,chunks])=>[key,Buffer.concat(chunks).toString('utf8')])));
+      });
+    });
   }catch(e){throw new AwError('probe_failed',`CLI probe failed (${e.code??e.signal??'unknown'}); no model task was submitted`);}
 }
 export function declaredModels(provider) {

@@ -2,10 +2,12 @@
 
 以 Codex App / Codex CLI 为主入口，调用可配置的本地 AI CLI 完成方案设计、独立审查和交叉分析。辅助任务拥有独立上下文，主任务先读取摘要，再按需读取证据。
 
-Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.2 早期版本**，支持 Linux / WSL；原生 Windows 尚未支持。
+Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.3**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
 
 ## 功能
 
+- **跨平台部署**：Windows 支持 `.exe` / npm `.cmd` 入口、用户配置目录、文件锁及后台任务树清理。
+- **任意安装路径**：支持空格、中文目录；Codex 入口不依赖 PATH 或手动设置 `AW_ROOT`，移动仓库后可重新登记。
 - **按主机配置角色**：职责与 CLI、模型、推理档位分离，可在不同电脑使用不同绑定。
 - **本地配置界面**：`aw ui` 查看职责、编辑绑定、预览差异并保存；新任务读取更新后的配置。
 - **多 CLI 适配**：Claude Code、Codex、OpenCode，以及 ACP 兼容 CLI（包括 DSH）。
@@ -13,11 +15,11 @@ Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用
 - **可恢复任务**：后台执行、状态查询、取消、原生会话续接和幂等请求。
 - **有界结果**：默认摘要包含审计结论、阻塞项、未验证项及证据引用，详细结果分页读取。
 
-工具使用 Node.js 标准库，没有独立的常驻 daemon、relay 或数据库。`aw ui` 仅在命令运行期间开放本机回环端口。
+工具使用 Node.js 与 `cross-spawn`，没有独立的常驻 daemon、relay 或数据库。`aw ui` 仅在命令运行期间开放本机回环端口。
 
 ## 安装与起步
 
-需要 Node.js **22.12+**、npm、Linux / WSL 的 `flock`，以及已安装并登录的目标 AI CLI。
+需要 Node.js **22.12+**、npm，以及已安装并登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要 WSL 或管理员权限。
 
 先按 [安装说明](docs/INSTALL.md) 准备固定版本的运行时和本机配置。安装完成后：
 
@@ -56,7 +58,7 @@ aw ui --port 43121 --host-config /absolute/private/host.json
 
 预设名称 `home` 和 `office` 分别提供 Codex / Claude 与 OpenCode / ACP 的配置示例。模型名称和档位仅作示例，使用前应按自己的 CLI 目录核对。实际配置不要提交到版本库。
 
-默认主机配置是 `~/.config/agent-workflow/host.json`，可用 `AW_HOST_CONFIG` 或 `--host-config FILE` 覆盖。命令行也可编辑绑定：
+默认主机配置在 Linux / WSL 上是 `~/.config/agent-workflow/host.json`，Windows 上是 `%LOCALAPPDATA%/agent-workflow/host.json`，可用 `AW_HOST_CONFIG` 或 `--host-config FILE` 覆盖。命令行也可编辑绑定：
 
 ```bash
 aw configure --role reviewer --provider claude-local \
@@ -110,7 +112,7 @@ aw cancel TASK_ID
 
 各 adapter 的 CLI 工具限制不等于统一的操作系统沙箱。目录探测、协议测试和格式正确的结果不能证明所有后端的真实权限行为或回答质量。登录、额度、管理员策略及模型可用性需在目标环境中核对。
 
-任务与原始日志留在 `~/.local/state/agent-workflow/<host-id>/`，凭据由各 CLI 管理。模型元数据缓存 10 分钟，可通过 `--refresh` 刷新。任务记录上限为 2,000 个，单份 transcript 上限为 16 MiB；超过时显式报错并保留记录，不自动批量清理。
+任务与原始日志在 Linux / WSL 上留在 `~/.local/state/agent-workflow/<host-id>/`，Windows 上留在 `%LOCALAPPDATA%/agent-workflow/state/<host-id>/`，凭据由各 CLI 管理。模型元数据缓存 10 分钟，可通过 `--refresh` 刷新。任务记录上限为 2,000 个，单份 transcript 上限为 16 MiB；超过时显式报错并保留记录，不自动批量清理。
 
 ```bash
 npm run check
@@ -119,9 +121,9 @@ npm test
 AW_TEST_UPSTREAM=/path/to/unmodified/ai-cli-mcp-2.25.0 npm test
 ```
 
-测试覆盖关键配置/请求/结果合同、本地 HTTP 保存与冲突处理，以及真实 runner、文件系统和进程锁。外部 AI CLI 用可控协议进程隔离；没有提供上游包时，相关进程测试会明确标为 skipped。可选的真实模型验收见安装说明，执行会使用对应模型额度。
+测试覆盖关键配置/请求/结果合同、本地 HTTP 保存与冲突处理、跨平台安装与移动后登记，以及真实 runner、文件系统和进程锁。外部 AI CLI 用可控协议进程隔离；没有提供上游包时，相关进程测试会明确标为 skipped。可选的真实模型验收见安装说明，执行会使用对应模型额度。
 
-真实模型质量、不同主机的连续使用、原生 Windows 及额度节省效果不由这些测试保证。此版本的 UI 已验证 HTTP 接口和启停行为，浏览器交互与视觉验收尚未完成。
+这些测试使用可控 CLI 验证 Windows 与 Linux 的执行链；真实模型质量、不同主机的连续使用及额度节省效果不由这些测试保证。此版本的 UI 已验证 HTTP 接口和启停行为，浏览器交互与视觉验收尚未完成。
 
 ## 引用与许可证
 

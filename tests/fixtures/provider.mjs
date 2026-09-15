@@ -40,6 +40,10 @@ if(args.includes('--input-format')) {
   if(backend==='claude')emit({type:'system',subtype:'init',model:value('--model'),session_id:sessionId,tools:['Read','Glob','Grep']});
   if(backend==='codex')emit({type:'thread.started',thread_id:sessionId});
   if(backend==='opencode')emit({type:'step_start',sessionID:sessionId,part:{}});
+  if(request.goal==='orphan') {
+    const descendant=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+    fs.writeFileSync('descendant.pid',String(descendant.pid));descendant.unref();
+  }
   if(request.goal==='hang') {
     const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:'ignore'});
     fs.writeFileSync('descendant.pid',String(child.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000);

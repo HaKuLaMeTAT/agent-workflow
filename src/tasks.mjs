@@ -24,7 +24,11 @@ async function refreshUnlocked(h,key) {
   }else {
     const exitFile=path.join(receipt.process_dir,'exit-status.json'),alive=sameProcess(receipt.identity);
     if(m.cancel_requested&&alive&&!fs.existsSync(exitFile)&&m.cancel_signal_for!==hash(receipt.identity)) {
-      try{process.kill(receipt.identity.pid,'SIGTERM');m.cancel_signal_for=hash(receipt.identity);}catch(e){if(e.code!=='ESRCH')throw e;}
+      try{
+        if(process.platform==='win32')atomicJson(path.join(dir,'cancel.json'),{identity:receipt.identity});
+        else process.kill(receipt.identity.pid,'SIGTERM');
+        m.cancel_signal_for=hash(receipt.identity);
+      }catch(e){if(e.code!=='ESRCH')throw e;}
     }
     if(fs.existsSync(exitFile)||!alive) {
       let observed;
@@ -55,7 +59,7 @@ async function refreshUnlocked(h,key) {
 }
 async function refreshTask(h,key){return withTaskLock(h,key,()=>refreshUnlocked(h,key));}
 export async function submit(h,{role,cwd,raw,requestId,overrides={},parentId=null}) {
-  requireValue(process.platform==='linux','platform_unverified','Execution is validated only for Linux/WSL');
+  requireValue(['linux','win32'].includes(process.platform),'platform_unverified','Execution supports Linux/WSL and Windows');
   requireValue(process.env.AW_WORKER!=='1','delegation_forbidden','Leaf workers cannot submit tasks');id(requestId,'request ID');
   const parent=parentId?await refreshTask(h,parentId):null;
   const key='t_'+hash([h.host_id,raw.source??'local',requestId]).slice(0,32);

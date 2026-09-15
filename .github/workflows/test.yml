@@ -1,0 +1,21 @@
+name: Cross-platform tests
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm install --prefix .runtime/pristine --save-exact --ignore-scripts --no-audit --no-fund ai-cli-mcp@2.25.0
+      - run: npm run check
+      - run: npm test
+        env:
+          AW_TEST_UPSTREAM: ${{ github.workspace }}/.runtime/pristine/node_modules/ai-cli-mcp

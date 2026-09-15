@@ -10,7 +10,7 @@ export const codex={
     const help=helpOutput.stdout+helpOutput.stderr,version=versionOutput.stdout+versionOutput.stderr;
     const ready=required.every(flag=>help.includes(flag));let models=[],catalog_error=null;
     if(context.catalog) {
-      const file=path.join(os.homedir(),'.codex/models_cache.json');
+      const file=path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'models_cache.json');
       try {
         const cache=readJson(file,8*1024*1024);
         models=(cache.models??[]).map(m=>({id:m.slug??m.id,efforts:(m.supported_reasoning_levels??[]).map(x=>x.effort??x),source:'cli_cache',verified:false})).filter(m=>typeof m.id==='string');

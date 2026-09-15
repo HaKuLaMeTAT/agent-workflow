@@ -11,9 +11,11 @@
 
 [patches/detached-runner.cjs](../patches/detached-runner.cjs) 派生自该版本发布包的 `dist/detached-runner.cjs`。[scripts/patch-upstream.mjs](../scripts/patch-upstream.mjs) 包含应用到 `dist/cli-process-service.js` 的小范围补丁及必要上下文。
 
-修改用于接收 adapter 提供的显式命令、stdin、环境、启动回执、超时和进程组取消参数。原生 builder 未作为安全默认入口使用；这些扩展是本工具的修改，不是上游公开 API 的原生承诺。
+修改用于接收 adapter 提供的显式命令、stdin、环境、启动回执、超时和任务取消参数。原生 builder 未作为安全默认入口使用；这些扩展是本工具的修改，不是上游公开 API 的原生承诺。
 
-补丁应用前检查版本和原始文件摘要；已经应用的副本也必须符合固定补丁摘要。安装会在局部运行时目录产生 `aw-patch.json`。上游其余文件和依赖由使用者按安装说明获取，不随本仓库复制分发。
+v0.3 的 `aw-prepared-v2` 增加 Windows 进程身份、取消请求及 Job Object 生命周期支持。`src/platform.cjs`、`src/spawn.cjs` 与 `patches/windows-job.ps1` 是本项目自有代码，安装时复制到上游运行目录并一同校验摘要。
+
+补丁应用前检查版本和原始文件摘要；已经应用的副本也必须符合固定补丁摘要。支持从摘要完全匹配的 v0.2 `aw-prepared-v1` 升级；修改过的旧补丁不会被覆盖。安装会在局部运行时目录产生 `aw-patch.json`。上游其余文件和依赖由使用者按安装说明获取，不随本仓库复制分发。
 
 上游包声明的运行依赖包括 `@modelcontextprotocol/sdk`、`cross-spawn` 和 `zod`。这些依赖沿用各自许可证；安装产生的运行时 lockfile 留在本机。升级上游时必须核对补丁位置、摘要和受影响的进程测试。
 
