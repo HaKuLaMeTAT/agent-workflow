@@ -47,7 +47,9 @@ test('configuration contract: host binding, project restrictions and explicit ov
   fs.writeFileSync(path.join(dir,'policy.md'),'Root instructions must reach the host.');
   atomicJson(path.join(dir,'agent-workflow.json'),{schema_version:1,allowed_roles:['developer-basic'],instructions:['policy.md'],workflows:{implement:'developer-basic'}});
   const hostRole=resolveRole(h,null,dir,{workflow:'implement'});assert.equal(hostRole.role.execution,'host');assert.match(hostRole.project_instructions[0].text,/Root instructions/);
-  h.bindings['developer-basic']={...h.bindings['developer-basic'],execution:'worker',access:'read-only'};
+  assert.equal(hostRole.model,null);assert.equal(hostRole.provider,null);
+  assert.throws(()=>resolveRole(h,'developer-basic',dir,{model:'configured-model'}),{code:'host_model_not_configurable'});
+  h.bindings['developer-basic']={...h.bindings['developer-basic'],execution:'worker',access:'read-only',provider:'codex-local',model:'gpt-6-astra'};
   const worker=resolveRole(h,null,dir,{workflow:'implement'});assert.equal(worker.role.execution,'worker');assert.equal(worker.role.can_delegate,false);assert.equal(worker.role.access,'read-only');
   assert.throws(()=>resolveRole(h,'reviewer',dir,{workflow:'implement'}),{code:'workflow_conflict'});
   h.providers['codex-local'].executable=dir;
@@ -56,7 +58,7 @@ test('configuration contract: host binding, project restrictions and explicit ov
   assert.equal(checkRuntime(dir).available,false);
   fs.writeFileSync(path.join(dir,'duplicate.json'),'{"roles":{"x":1,"\\u0078":2}}');
   assert.throws(()=>readJson(path.join(dir,'duplicate.json')),{code:'duplicate_key'});
-  assert.ok(Object.values(loadHost(path.join(TOOL_ROOT,'config/office.example.json')).bindings).every(b=>!b.enabled));
+  assert.ok(Object.values(loadHost(path.join(TOOL_ROOT,'config/office.example.json')).bindings).filter(b=>b.execution!=='host').every(b=>!b.enabled));
 });
 test('request and adapter boundary: no shell, no inherited API credential, no session fork',t=>{
   const dir=temporary(t), h=loadHost(path.join(TOOL_ROOT,'config/home.example.json'));
@@ -119,6 +121,6 @@ test('executor configuration: explicit permission changes and atomic model allow
   await editBindings(file,{changes:[{role:'executor',patch:{effort:null}}],write:true});
   assert.equal(resolveRole(loadHost(file),'executor',dir).effort,null);
   await assert.rejects(editBindings(file,{changes:[{role:'reviewer',patch:{permissions:'full-access'}}],write:true}),{code:'permission_escalation'});
-  await editBindings(file,{changes:[{role:'developer-basic',patch:{execution:'worker',access:'workspace-write',permissions:'full-access'}}],write:true});
+  await editBindings(file,{changes:[{role:'developer-basic',patch:{execution:'worker',access:'workspace-write',permissions:'full-access',provider:'claude-local',model:'claude-sonnet-5'}}],write:true});
   assert.equal(resolveRole(loadHost(file),'developer-basic',dir).role.can_delegate,false);
 });

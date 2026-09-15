@@ -2,8 +2,8 @@
   "schema_version": 1,
   "roles": {
     "executor": {
-      "label": "执行开发师",
-      "description": "独立工作区内读取、修改、验证并在预算内修复",
+      "label": "专项执行师",
+      "description": "明确工作区内生成文件、修改、验证并在预算内修复",
       "execution": "worker",
       "access": "workspace-write",
       "can_delegate": false,

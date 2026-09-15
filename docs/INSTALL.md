@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.4.1）
+# 安装与本机配置（v0.4.2）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -31,7 +31,7 @@ node bin/aw.mjs roles --host-config config/home.local.json
 node bin/aw.mjs ui --host-config config/home.local.json
 ```
 
-`home` 提供 Codex / Claude 示例；`office` 提供 OpenCode / ACP / Codex 示例，角色初始禁用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，需按本机 CLI 目录确认。
+`home` 默认由当前 Codex 会话承担基础/主力开发和主分析，提供 Claude 外部升级与专项角色，并开启主控调度；Codex provider 可按需绑定外部 worker。`office` 提供 OpenCode / DSH / Codex 示例，外部角色与调度初始关闭，主入口职责启用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，需按本机 CLI 目录确认。
 
 UI 可修改已有角色的绑定。也可先读取目录，再预览、保存：
 
@@ -83,15 +83,15 @@ node scripts/install-local.mjs --apply --update
 
 补丁脚本可将摘要完全匹配的 `aw-prepared-v1` 升级到 v0.3 的 `aw-prepared-v2`。如果上游放在其他目录，给补丁脚本传入实际目录。
 
-`--update` 默认保留**已安装配置**中的角色绑定和 UI 修改，刷新生成的入口、Skill 与按需读取的 references。新增 executor 不会自动启用；旧配置未包含它时，可直接用 UI 或 configure 添加绑定。可识别并转换 v0.2 指向当前仓库的 Skill 符号链接；未知安装或自定义过的旧入口不会被覆盖。需要主动替换配置时，在 `--apply` 后显式传入配置文件。
+`--update` 默认保留**已安装配置**中的角色绑定和 UI 修改，刷新生成的入口、Skill 与按需读取的 references。升级不会自动改绑、启用 executor 或开启调度；旧配置未包含它们时，用 UI/configure 补充外部角色，使用 `aw routing --enable --write` 开启调度。基础和主力开发建议保留为 host，不必另配模型；host 可以只写 `{"enabled":true,"execution":"host"}`。旧 host 的模型字段被忽略，不代表当前会话模型。可识别并转换 v0.2 指向当前仓库的 Skill 符号链接；未知安装或自定义过的旧入口不会被覆盖。需要主动替换配置时，在 `--apply` 后显式传入配置文件。
 
 v0.3 仓库移动后，在新位置重新运行 `node scripts/install-local.mjs --apply --update`。安装器从旧登记信息找到原引用，更新仓库内部的 catalog/runtime 路径，保留外部配置和状态路径。无需手改 Skill 或设置 `AW_ROOT`。如果 Node 的位置改变，也用新 Node 重跑这条命令。自定义过用户安装位置时，升级应再次传入同样的 `--host-config`、`--bin-dir`、`--skill-dir`。
 
 移动 v0.2 仓库时，建议先在原位置升级至 v0.3，再移动并重新登记。
 
-## v0.4.1：Windows 执行任务迁移
+## v0.4.2：Windows 执行任务迁移
 
-原生 Windows 的完整执行路径需要 Git for Windows 和已安装、登录的目标 CLI，并能从启动 AW 的环境定位 Git。executor 支持 Claude、Codex、OpenCode、DSH / ACP。`home` 和 `office` 模板都含 Codex provider，executor 初始禁用；按自己的账户与模型目录启用。
+原生 Windows 需要已安装、登录的目标 CLI；`git-worktree` 另需 Git for Windows，`directory` 无需 Git。executor 支持 Claude、Codex、OpenCode、DSH / ACP。两个模板都含 Codex provider；按自己的账户与目录绑定外部升级/专项角色。基础和日常主力开发默认由当前 Codex 入口承担。
 
 在 Windows 上重新生成本机配置和登记 Skill，不直接复制 WSL 的 host.json；其中 Linux 的 executable、catalog、state_dir 等绝对路径不适用于 Windows。迁移源码和项目文件，登录目标 CLI 后按本机目录绑定角色。已有 Windows v0.3 安装则使用上一节的 `--update` 保留本机配置。
 
@@ -104,7 +104,7 @@ node scripts/install-local.mjs --apply config/home.local.json
 
 如已登记安装，使用 `aw configure` 修改已安装 host，不用另一份旧源配置覆盖它。Codex 的模型支持目录选择和手动输入，默认模板不设置固定的模型允许列表；Luna 只是示例。旧 host 若有 `providers[ID].models`，可显式扩充或删除该字段。模型和档位以本机目录及实际调用为准，示例命令不是所有账户的模型可用性保证。
 
-执行请求见 [交接与命令格式](../skills/agent-workflow/references/execution.md)。源项目需为干净且已有提交的 Git 仓库；不含 tracked symlink/submodule。请求放在项目外或忽略目录；AW state_dir 放在目标仓库外。所有请求内的相对路径使用 `/`，支持空格和中文目录。
+执行请求见 [交接与命令格式](../skills/agent-workflow/references/execution.md)。使用 `git-worktree` 时，源项目需为干净且已有提交的 Git 仓库；不含 tracked symlink/submodule。请求放在项目外或忽略目录；AW state_dir 放在目标仓库外。所有请求内的相对路径使用 `/`，支持空格和中文目录。
 
 验证使用命令加 argv 数组，不拼接 shell 字符串。Node 项目可显式声明一次性的 `execution.setup`：
 
@@ -140,6 +140,32 @@ node scripts/live-execution-smoke.mjs --run
 ```
 
 它在独立临时项目和任务状态目录中验证读文件、修改、测试、应用与清理，最多两次模型编辑调用，会消耗配置模型的额度。它不修改原有 host 配置，保留测试日志和 acceptance.json。也可指定一份临时 host：`node scripts/live-execution-smoke.mjs --run HOST_CONFIG`；启用完整权限后，加 `--native-tools` 会要求 worker 实际调用命令工具，并检查调用事件。
+
+### 目录任务与主入口调度
+
+文件、文档或临时脚本使用 `execution.workspace: {"mode":"directory"}`，默认在任务专属临时目录运行；prepare 同时传 `--workspace-mode directory`。可显式指定 `target: "cwd"` 在 `--cwd` 目录写入，覆盖已有文件需 `overwrite: "allow"`。声明文件检查或实际运行检查；不需要为临时目录初始化 Git，也不走 apply。结果含绝对产物路径，取消不会回滚。详见执行交接格式。
+
+建议只优先配置攻坚升级、设计、审查、复核与专项执行。基础/主力开发保留为 host；需要迁移成外部执行时再显式修改 execution/access 和模型。UI 对主入口隐藏模型字段，外部角色仍可自由选择 CLI、模型、档位和权限。
+
+```text
+aw routing --enable --write
+aw route --kind code --complexity standard --cwd "项目目录"
+aw route --kind code --complexity standard --failed-attempts 2 --cwd "项目目录"
+aw prepare --role executor --cwd "输入目录" --workspace-mode directory
+node scripts/live-directory-smoke.mjs --run
+```
+
+最后一条是可选真实验收，会使用配置的 artifact 角色模型额度：在非 Git 临时目录生成文档与 JSON，最多两轮，独立检查输入随机标识与数量，保留产物及 acceptance.json。可在 `--run` 后指定私有 host 配置。
+
+主控规则通过安装后的 Skill 生效，更新后重新打开旧 Codex 会话。日常开发留在主入口；难点/专项任务再调用外部角色。调用前说明分工，最终说明实际参与角色、请求模型、CLI 报告值、贡献和验收；配置并不证明调用成功。
+
+### v0.4.2 验收记录
+
+44 项自动用例已在 Linux/WSL 与原生 Windows 覆盖并通过（完整回归加最终修改的定向复测）。新增覆盖：五种 adapter 的非 Git 生成与修复、文件检查、覆盖保护、临时/用户目录清理、取消、同目录并发、外部改动和替换目录检测、Windows 路径大小写、主入口无模型绑定、升级调度、配置开关与稳定的实际调用记录。外部 CLI 使用可控协议进程；这些测试不代表所有真实账户都已在 Windows 验证。
+
+本轮真实验收在 WSL 使用 DSH / DeepSeek V4 Flash（low），从 artifact 路由到专项执行师，1 轮完成非 Git 临时目录中的 Markdown 与 JSON；AW 文件检查和主控独立输入事实核验通过，CLI 回报的模型/档位与选择一致。主控实现本轮代码并完成整合，没有额外模型参与实现或审查。
+
+原生 Windows Edge 已通过页面交互检查：主入口隐藏外部模型字段、无模型绑定保存、调度开关预览保存、手动 Codex 模型保存和窄屏布局。迁移目标机仍需按实际账户运行 prepare 和可选真实验收。本轮未实施用量统计或反馈精简，也不据此宣称 token 节省。
 
 ### v0.4.1 验收记录
 

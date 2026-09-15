@@ -15,7 +15,7 @@ export function loadHost(file) {
 // In-memory previews use the same validation and path resolution as normal CLI reads.
 export function parseHost(hostFile,h) {
   const base=path.dirname(hostFile);
-  fields(h,['schema_version','host_id','catalog','providers','bindings','limits','state_dir','upstream_dir'],'host');
+  fields(h,['schema_version','host_id','catalog','providers','bindings','limits','state_dir','upstream_dir','routing'],'host');
   requireValue(h.schema_version===1,'invalid_config','Expected host schema_version 1');id(h.host_id,'host_id');
   const catalogFile=real(path.resolve(base,text(h.catalog,'catalog'))),c=readJson(catalogFile);
   fields(c,['schema_version','roles'],'catalog');requireValue(c.schema_version===1,'invalid_config','Expected catalog schema_version 1');object(c.roles,'roles');
@@ -55,12 +55,21 @@ export function parseHost(hostFile,h) {
     const access=b.access??((b.execution??roles[key].execution)==='worker'&&roles[key].execution==='host'?'read-only':roles[key].access);
     if(b.permissions==='full-access')requireValue(roles[key].result_contract==='implementation'&&access==='workspace-write','permission_escalation','Full access requires an implementation role with workspace-write access');
     if(!b.enabled)continue;
+    // The current host already has a runtime/model; it needs no external binding.
+    if((b.execution??roles[key].execution)==='host')continue;
     requireValue(providers[b.provider],'invalid_config',`Unknown provider ${b.provider}`);validateModel(providers[b.provider],b.model,b.effort??null);
   }
   fields(h.limits??{},Object.keys(DEFAULT_LIMITS),'limits');const limits={...DEFAULT_LIMITS,...h.limits};
   integer(limits.max_active_workers,1,8,'max_active_workers');integer(limits.default_timeout_seconds,1,7200,'default_timeout_seconds');
   integer(limits.summary_max_chars,100,8000,'summary_max_chars');integer(limits.result_page_max_chars,100,32000,'result_page_max_chars');
-  return {hostFile,host_id:h.host_id,roles,providers,bindings:h.bindings,limits,
+  fields(h.routing??{},['enabled','roles','escalate_after','max_delegations'],'routing');
+  const routeRoles={code_simple:'developer-basic',code_standard:'developer-main',code_complex:'developer-hard',artifact:'executor',design:'designer',review:'reviewer',analysis:'analyst-primary'};
+  fields(h.routing?.roles??{},Object.keys(routeRoles),'routing.roles');Object.assign(routeRoles,h.routing?.roles??{});
+  for(const role of Object.values(h.routing?.roles??{}))requireValue(roles[role],'invalid_config','Unknown routing role: '+role);
+  const routing={enabled:h.routing?.enabled??false,roles:routeRoles,escalate_after:h.routing?.escalate_after??2,max_delegations:h.routing?.max_delegations??3};
+  requireValue(typeof routing.enabled==='boolean','invalid_config','routing.enabled must be boolean');
+  integer(routing.escalate_after,1,5,'escalate_after');integer(routing.max_delegations,1,20,'max_delegations');
+  return {hostFile,host_id:h.host_id,roles,providers,bindings:h.bindings,limits,routing,
     state_dir:path.resolve(base,h.state_dir??path.join(userPaths().state,h.host_id)),
     upstream_dir:path.resolve(base,h.upstream_dir??path.join(TOOL_ROOT,'.runtime/node_modules/ai-cli-mcp'))};
 }
@@ -110,18 +119,19 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
   requireValue(project.allowed_roles.includes(roleId),'role_not_allowed',`Role not allowed by ancestor project policy: ${roleId}`);
   const execution=binding.execution??defaults.execution;
   const role={...defaults,execution,access:binding.access??(execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access),permissions:binding.permissions??'restricted',can_delegate:execution==='worker'?false:defaults.can_delegate};
-  const provider=h.providers[binding.provider],model=overrides.model??binding.model,effort=Object.hasOwn(overrides,'effort')?overrides.effort:binding.effort??null;
-  validateModel(provider,model,effort);
-  const binary=executable(provider.executable),runtime=checkRuntime(h.upstream_dir);
-  const snapshot={host_id:h.host_id,role_id:roleId,provider_id:binding.provider,role:{...role,instructions:readText(role.instructions)},
-    provider:{...provider,executable:binary??provider.executable},model,effort,cwd:project.cwd,project_root:project.root,workflow:overrides.workflow??null,
+  const host=execution==='host',provider=host?null:h.providers[binding.provider],model=host?null:overrides.model??binding.model,effort=host?null:Object.hasOwn(overrides,'effort')?overrides.effort:binding.effort??null;
+  requireValue(!host||(overrides.model===undefined&&overrides.effort===undefined),'host_model_not_configurable','AW cannot select the model or effort of the current host conversation');
+  if(!host)validateModel(provider,model,effort);
+  const binary=host?null:executable(provider.executable),runtime=checkRuntime(h.upstream_dir);
+  const snapshot={host_id:h.host_id,role_id:roleId,provider_id:host?null:binding.provider,role:{...role,instructions:readText(role.instructions)},
+    provider:host?null:{...provider,executable:binary??provider.executable},model,effort,cwd:project.cwd,project_root:project.root,workflow:overrides.workflow??null,
     project_policy_files:project.files,project_instructions:project.instructions.map(file=>({path:file,text:readText(file)})),limits:h.limits};
   return {...snapshot,config_hash:hash(snapshot),runnable:false,runtime,
     unavailable_reason:execution==='host'?'host_role_use_current_agent':!binary?'missing_executable':!runtime.available?'upstream_not_installed_or_patched':'capability_probe_required',
-    guarantee:'Not probed; configuration is not proof of executable capability'};
+    guarantee:host?'Use the current conversation; AW does not select its model or execution permissions':'Not probed; configuration is not proof of executable capability'};
 }
 export function publicRole(r,{instructions=false}={}) {
-  return {role:r.role_id,label:r.role.label,execution:r.role.execution,access:r.role.access,permissions:r.role.permissions,provider:r.provider_id,adapter:r.provider.adapter,model:r.model,effort:r.effort,
-    runnable:r.runnable,reason:r.unavailable_reason,guarantee:r.guarantee,config_hash:r.config_hash,cwd:r.cwd,project_root:r.project_root,workflow:r.workflow,
+  return {role:r.role_id,label:r.role.label,execution:r.role.execution,access:r.role.access,permissions:r.role.execution==='host'?null:r.role.permissions,provider:r.provider_id,adapter:r.provider?.adapter??null,model:r.model,effort:r.effort,
+    runnable:r.runnable,reason:r.unavailable_reason,guarantee:r.guarantee,workspace_mode:r.role.execution==='worker'&&r.role.access==='workspace-write'?r.workspace_mode??null:null,config_hash:r.config_hash,cwd:r.cwd,project_root:r.project_root,workflow:r.workflow,
     discovery:r.discovery??null,...(instructions?{instructions:r.role.instructions,project_instructions:r.project_instructions}: {})};
 }

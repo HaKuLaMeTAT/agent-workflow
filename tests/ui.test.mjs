@@ -55,5 +55,9 @@ test('local UI HTTP contract: guarded access, preview/save, CLI conflict and mod
   assert.equal(await new Promise((resolve,reject)=>{configure.once('error',reject);configure.once('close',resolve);}),0,errors);
   assert.deepEqual(readJson(file).providers['codex-local'].models['another-fast-model'],['max']);
   assert.equal(readJson(file).bindings.executor.permissions,'restricted');
+  const routingView=await (await call('/api/config')).json(),routing={revision:routingView.revision,routing:{enabled:false}};
+  assert.equal((await call('/api/preview',{body:routing})).status,200);assert.equal(readJson(file).routing.enabled,true);
+  assert.equal((await call('/api/config',{body:routing})).status,200);assert.equal(readJson(file).routing.enabled,false);
+  assert.equal((await call('/api/config',{body:routing})).status,409);
   assert.equal((await call('/api/run',{body:{}})).status,404);
 });

@@ -62,7 +62,7 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
     const timer=setTimeout(()=>stopChild(child,'SIGKILL'),1000);await closed;clearTimeout(timer);
   };
   try {
-    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:policy.writing},terminal:policy.full},clientInfo:{name:'agent-workflow',version:'0.4.1'}});
+    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:policy.writing},terminal:policy.full},clientInfo:{name:'agent-workflow',version:'0.4.2'}});
     requireValue(initialized.protocolVersion===1,'unsupported_protocol','ACP protocol version is unsupported');
     return {request,close,initialized};
   }catch(e){await close();throw e;}

@@ -1,11 +1,11 @@
 const $=id=>document.getElementById(id);
 const editable=['provider','model','effort','enabled','execution','access','permissions'];
-const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置',access:'写入能力',permissions:'权限策略',models:'模型允许列表'};
+const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置',access:'写入能力',permissions:'权限策略',models:'模型允许列表',roles:'路由角色',escalate_after:'升级失败阈值',max_delegations:'单个工作包委派上限'};
 const fragment=new URLSearchParams(location.hash.slice(1)),linkToken=fragment.get('token');
 let token=linkToken;
 try{if(linkToken)sessionStorage.setItem('aw-ui-token',linkToken);else token=sessionStorage.getItem('aw-ui-token');}catch{/* The complete link still works when browser storage is unavailable. */}
 if(linkToken)history.replaceState(null,'',location.pathname);
-let snapshot=null,selected=null,busy=false,conflict=false,previewRequest=null;
+let snapshot=null,selected=null,busy=false,conflict=false,previewRequest=null,routingDraft=null;
 const drafts=new Map(),catalogs=new Map(),discovering=new Set();
 function element(tag,content,className){const node=document.createElement(tag);if(content!==undefined)node.textContent=content;if(className)node.className=className;return node;}
 function notice(message,success=false){$('notice').textContent=message;$('notice').hidden=!message;$('notice').classList.toggle('success',success);}
@@ -22,9 +22,9 @@ function binding(role){return drafts.get(role.id)??role.binding;}
 function changes(){return [...drafts].map(([role,next])=>({role,allow_model:next.allow_model===true,patch:Object.fromEntries(editable.filter(key=>next[key]!==snapshot.roles.find(r=>r.id===role).binding[key]).map(key=>[key,next[key]]))}));}
 function displayValue(field,value){if(typeof value==='object'&&value!==null)return JSON.stringify(value);if(field==='permissions')return value==='full-access'?'完整权限（主机与网络访问）':'受限权限';if(field==='access')return value==='workspace-write'?'可修改文件':'只读';if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'独立辅助任务';return String(value);}
 function renderRoles(){
-  $('roles').replaceChildren(...snapshot.roles.map(role=>{
+  $('roles').replaceChildren(...[...snapshot.roles].sort((a,b)=>Number(binding(a).execution==='host')-Number(binding(b).execution==='host')).map(role=>{
     const b=binding(role),button=element('button',undefined,'role-button');button.type='button';button.dataset.role=role.id;button.setAttribute('aria-current',String(role.id===selected));
-    button.append(element('strong',role.label),element('span',drafts.has(role.id)?'待保存':b.enabled?(b.execution==='host'?'主对话':'辅助'):'停用',`role-indicator${drafts.has(role.id)?' changed':''}`),element('small',b.model?`${b.model} · ${b.effort??'默认'}`:'尚未绑定模型'));
+    button.append(element('strong',role.label),element('span',drafts.has(role.id)?'待保存':b.enabled?(b.execution==='host'?'主对话':'辅助'):'停用',`role-indicator${drafts.has(role.id)?' changed':''}`),element('small',b.execution==='host'?'使用当前会话，无需配置模型':b.model?`${b.model} · ${b.effort??'默认'}`:'尚未绑定模型'));
     button.addEventListener('click',()=>{selected=role.id;renderRoles();renderEditor();});return button;
   }));
 }
@@ -49,9 +49,11 @@ function renderEfforts(){
 }
 function renderExecution(){
   const writable=$('access').value==='workspace-write',host=$('execution').value==='host',full=$('permissions').value==='full-access';
+  document.querySelectorAll('[data-worker-field]').forEach(node=>{node.hidden=host;});
+  $('provider').required=!host;
   $('access').options[1].disabled=currentRole().access!=='workspace-write';
   $('permissions').disabled=!writable;
-  $('execution-note').textContent=host?'职责由当前主对话承担；这里的配置不会切换 Codex App 当前会话。':writable?(full?'完整权限：worker 可读写文件、运行命令并访问主机与网络。独立工作区不提供系统隔离；AW 仍校验交付范围并运行验收命令。':'受限权限：worker 修改指定范围的文件，AW 执行声明的测试并续接修复。Codex 使用原生工作区沙箱；其他 CLI 使用文件工具权限。'):'独立只读任务，交付分析、方案或审查结果。';
+  $('execution-note').textContent=host?'职责由当前 Codex 会话承担，无需绑定外部 CLI、模型或档位。建议保持基础和主力开发在主入口，只为升级与专项角色配置外部模型。':writable?(full?'完整权限：worker 可读写文件、运行命令并访问主机与网络。独立工作区不提供系统隔离；AW 仍校验交付范围并运行验收命令。':'受限权限：worker 修改指定范围的文件，AW 执行声明的测试并续接修复。Codex 使用原生工作区沙箱；其他 CLI 使用文件工具权限。'):'独立只读任务，交付分析、方案或审查结果。';
 }
 function renderEditor(){
   const role=currentRole(),b=binding(role);
@@ -64,16 +66,17 @@ function renderEditor(){
   $('instructions').textContent=role.instructions;renderModelChoices();renderExecution();updateActions();
 }
 function updateActions(){
-  const dirty=drafts.size>0;
+  const dirty=drafts.size>0||routingDraft!==null;
   $('preview').disabled=!dirty||busy||conflict;$('reload').disabled=busy;$('binding-fields').disabled=busy;
   $('refresh-models').disabled=busy||!$('provider').value||discovering.has($('provider').value);
-  $('save-status').textContent=conflict?'配置文件已有新版本':dirty?`${drafts.size} 个角色有未保存修改`:'与配置文件一致';
+  $('automatic-routing').disabled=busy||!snapshot;
+  $('save-status').textContent=conflict?'配置文件已有新版本':dirty?`${drafts.size} 个角色${routingDraft!==null?'及调度设置':''}有未保存修改`:'与配置文件一致';
   $('save-detail').textContent=conflict?'草稿已保留，请重新读取后再编辑。':'已有任务保持创建时的模型与档位。';
   $('save-dot').classList.toggle('dirty',dirty||conflict);
   $('save').disabled=busy||conflict;$('cancel-preview').disabled=busy;
 }
 function acceptSnapshot(next){
-  snapshot=next;drafts.clear();catalogs.clear();conflict=false;selected=next.roles.some(r=>r.id===selected)?selected:next.roles[0]?.id;
+  snapshot=next;routingDraft=null;$('automatic-routing').checked=next.routing.enabled;drafts.clear();catalogs.clear();conflict=false;selected=next.roles.some(r=>r.id===selected)?selected:next.roles.find(r=>r.binding.execution==='worker')?.id??next.roles[0]?.id;
   $('host-name').textContent=next.host_id;$('host-file').textContent=next.host_config;
   $('role-count').textContent=`${next.roles.length} 个角色 · ${next.providers.length} 个 CLI`;$('roster-count').textContent=String(next.roles.length).padStart(2,'0');
   $('workspace').hidden=!selected;$('save-bar').hidden=!selected;$('file-details').hidden=false;
@@ -90,17 +93,18 @@ for(const key of editable)$(key).addEventListener(key==='model'||key==='effort'?
   if(key==='model')renderEfforts();if(key==='access'&&$('access').value==='read-only')$('permissions').value='restricted';renderExecution();edit();
 });
 $('allow-model').addEventListener('change',edit);
+$('automatic-routing').addEventListener('change',()=>{routingDraft=$('automatic-routing').checked===snapshot.routing.enabled?null:$('automatic-routing').checked;updateActions();});
 $('binding-form').addEventListener('submit',e=>e.preventDefault());
 $('refresh-models').addEventListener('click',async()=>{
   const provider=$('provider').value,revision=snapshot.revision;discovering.add(provider);renderModelChoices();
   try{const result=await api(`/api/models?provider=${encodeURIComponent(provider)}&refresh=1`);if(snapshot.revision===revision)catalogs.set(provider,result);}catch(error){handleError(error);}finally{discovering.delete(provider);renderModelChoices();}
 });
 $('reload').addEventListener('click',async()=>{
-  if(drafts.size&&!window.confirm('重新读取将丢弃尚未保存的草稿，继续吗？'))return;
+  if((drafts.size||routingDraft!==null)&&!window.confirm('重新读取将丢弃尚未保存的草稿，继续吗？'))return;
   busy=true;updateActions();try{acceptSnapshot(await api('/api/config'));notice('已重新读取配置。',true);}catch(error){handleError(error);}finally{busy=false;updateActions();}
 });
 $('preview').addEventListener('click',async()=>{
-  busy=true;updateActions();previewRequest={revision:snapshot.revision,changes:changes()};
+  busy=true;updateActions();previewRequest={revision:snapshot.revision,changes:changes(),...(routingDraft!==null?{routing:{enabled:routingDraft}}:{})};
   try{
     const result=await api('/api/preview',previewRequest),groups=new Map();
     for(const change of result.changes){
@@ -118,13 +122,13 @@ $('save').addEventListener('click',async()=>{
   catch(error){if(error.code==='config_conflict')conflict=true;$('dialog-error').textContent=errorText(error);$('dialog-error').hidden=false;}
   finally{busy=false;$('save').textContent='保存配置';updateActions();}
 });
-window.addEventListener('beforeunload',event=>{if(drafts.size){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(drafts.size||routingDraft!==null){event.preventDefault();event.returnValue='';}});
 let checking=false;
 async function checkExternalChanges(){
   if(!snapshot||busy||checking||document.hidden||$('preview-dialog').open)return;checking=true;
   const revision=snapshot.revision;
   try{const next=await api('/api/config');if(snapshot.revision!==revision||busy||$('preview-dialog').open)return;
-    if(next.revision!==snapshot.revision){if(drafts.size){conflict=true;notice('检测到配置文件变化。当前草稿保留在页面中，请重新读取后再编辑。');updateActions();}else{acceptSnapshot(next);notice('已自动读取最新配置。',true);}}
+    if(next.revision!==snapshot.revision){if(drafts.size||routingDraft!==null){conflict=true;notice('检测到配置文件变化。当前草稿保留在页面中，请重新读取后再编辑。');updateActions();}else{acceptSnapshot(next);notice('已自动读取最新配置。',true);}}
   }catch(error){handleError(error);}finally{checking=false;}
 }
 window.addEventListener('focus',checkExternalChanges);setInterval(checkExternalChanges,15000);

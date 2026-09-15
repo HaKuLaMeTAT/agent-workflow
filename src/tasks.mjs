@@ -5,8 +5,8 @@ import {resolveRole} from './config.mjs';
 import {prepareRequest,buildCommand,validateProvider,upstreamService,prepareRole,getAdapter} from './adapter.mjs';
 import {validateResult,pageResult} from './result.mjs';
 import {withFileLock} from './locking.mjs';
-import {createWorkspace,assertWorkspace,workspaceRequest,ancestorInstructions,applyChanges,discardWorkspace} from './workspaces.mjs';
-import {observeExecution} from './execution.mjs';
+import {createWorkspace,assertWorkspace,workspaceRequest,ancestorInstructions,applyChanges,discardWorkspace,captureChanges} from './workspaces.mjs';
+import {observeExecution,workspaceOptions} from './execution.mjs';
 import {environment} from './adapters/common.mjs';
 
 const TERMINAL=new Set(['completed','failed','cancelled','timed_out','interrupted']);
@@ -17,7 +17,11 @@ export function readTask(h,key){const m=readJson(metaPath(h,key),4*1024*1024);re
 function taskKeys(h){const root=path.join(h.state_dir,'tasks');if(!fs.existsSync(root))return [];const entries=fs.readdirSync(root);requireValue(entries.length<=2000,'state_limit','More than 2000 task records; archive explicitly');return entries.filter(k=>fs.existsSync(metaPath(h,k)));}
 function withTaskLock(h,key,fn){return withFileLock(path.join(h.state_dir,'locks',`${id(key,'task ID')}.lock`),fn);}
 function receiptFor(h,m){const dir=taskDir(h,m.task_id),file=path.join(dir,'receipt.json');if(!fs.existsSync(file))return null;const r=readJson(file);requireValue(typeof r.process_dir==='string'&&within(path.join(dir,'upstream'),real(r.process_dir)),'invalid_receipt','Process directory outside task');return r;}
-function shortStatus(m){return {task_id:m.task_id,root_task_id:m.root_task_id,parent_id:m.parent_id,sequence:m.sequence??0,role:m.snapshot.role_id,state:m.state,error:m.error??null,model:m.snapshot.model,effort:m.snapshot.effort,can_followup:!m.workspace_closed&&TERMINAL.has(m.state)&&!!m.session_id&&m.snapshot.discovery?.capabilities?.resume!==false,...(m.workspace_owner?{workspace_owner:m.workspace_owner,execution_report:m.execution_report??null}:{}),created_at:m.created_at,updated_at:m.updated_at};}
+function shortStatus(m){return {task_id:m.task_id,root_task_id:m.root_task_id,parent_id:m.parent_id,sequence:m.sequence??0,role:m.snapshot.role_id,state:m.state,error:m.error??null,model:m.snapshot.model,effort:m.snapshot.effort,
+  dispatch:{role:m.snapshot.role_id,label:m.snapshot.role.label,provider:m.snapshot.provider_id,cli:m.snapshot.provider.adapter,requested_model:m.snapshot.model,requested_effort:m.snapshot.effort,
+    observed_model:m.observed_model??null,observed_effort:m.observed_effort??null,purpose:m.purpose??null,purpose_truncated:m.purpose_truncated??false,
+    access:m.snapshot.role.access,permissions:m.snapshot.role.permissions??'restricted',provider_turns:m.provider_turns??null,native_session_reported:!!m.session_id},
+  can_followup:!m.workspace_closed&&TERMINAL.has(m.state)&&!!m.session_id&&m.snapshot.discovery?.capabilities?.resume!==false,...(m.workspace_owner?{workspace_owner:m.workspace_owner,workspace_mode:m.snapshot.workspace_mode??'git-worktree',execution_report:m.execution_report??null}:{}),created_at:m.created_at,updated_at:m.updated_at};}
 async function refreshUnlocked(h,key) {
   const m=readTask(h,key),dir=taskDir(h,key),before=JSON.stringify(m);
   if(['completed','failed','cancelled','timed_out'].includes(m.state))return m;
@@ -36,7 +40,12 @@ async function refreshUnlocked(h,key) {
     if(fs.existsSync(exitFile)||!alive) {
       let observed;
       try{observed=await (m.workspace_owner?observeExecution(path.join(receipt.process_dir,'stdout.log')):getAdapter(m.snapshot.provider.adapter).observe(path.join(receipt.process_dir,'stdout.log')));}catch(e){observed={error:e.code??'invalid_result'};}
-      if(m.workspace_owner&&fs.existsSync(path.join(dir,'execution.json')))m.execution_report=path.join(dir,'execution.json');
+      m.observed_model=observed.model??null;m.observed_effort=observed.effective_effort??null;
+      if(m.workspace_owner&&fs.existsSync(path.join(dir,'execution.json'))) {
+        m.execution_report=path.join(dir,'execution.json');
+        const report=readJson(m.execution_report,4*1024*1024);
+        m.provider_turns=report.attempts.filter(a=>Object.hasOwn(a,'started_at')?a.started_at:a.provider).length;
+      }else if(observed.session_id)m.provider_turns=1;
       // Retain native handles even on quota, malformed output, timeout, and cancellation.
       if(observed.session_id) {
         if(!m.expected_session_id||m.expected_session_id===observed.session_id)m.session_id=observed.session_id;
@@ -85,13 +94,14 @@ export async function submit(h,{role,cwd,raw,requestId,overrides={},parentId=nul
     const existing=new Set(snapshot.project_instructions.map(x=>x.path));
     snapshot.project_instructions=[...snapshot.project_instructions,...ancestorInstructions(snapshot.cwd).filter(x=>!existing.has(x.path))];
     if(parent&&!raw.execution)raw={...raw,execution:readJson(path.join(taskDir(h,parent.task_id),'request.json')).execution};
+    snapshot.workspace_mode=workspaceOptions(raw.execution?.workspace).mode;
   }
   // Slow CLI discovery never holds the submission lock or blocks status/cancel.
   snapshot=await prepareRole(h,snapshot);
   requireValue(snapshot.runnable,'role_not_executable',snapshot.unavailable_reason??'Role not executable');
   let requestSnapshot=snapshot,requestRaw=raw;
   if(writing&&parent) {
-    const workspace=readJson(path.join(taskDir(h,parent.workspace_owner),'workspace.json'));assertWorkspace(workspace);
+    const workspace=readJson(path.join(taskDir(h,parent.workspace_owner),'workspace.json'),8*1024*1024);assertWorkspace(workspace);
     requestSnapshot={...snapshot,cwd:workspace.cwd};
     // Follow-ups can name files created by the worker, which do not exist in the source yet.
     requestRaw={...raw,read_paths:raw.read_paths?.map(p=>typeof p==='string'&&path.isAbsolute(p)&&within(snapshot.cwd,p)?path.join(workspace.cwd,path.relative(snapshot.cwd,p)):p)};
@@ -120,10 +130,23 @@ export async function submit(h,{role,cwd,raw,requestId,overrides={},parentId=nul
     let plan,workspace;
     if(writing) {
       if(previous) {
-        workspace=readJson(path.join(taskDir(h,root),'workspace.json'));assertWorkspace(workspace);
+        workspace=readJson(path.join(taskDir(h,root),'workspace.json'),8*1024*1024);assertWorkspace(workspace);
         const previousRequest=readJson(path.join(taskDir(h,previous.task_id),'request.json'));
-        requireValue(hash([prepared.request.execution.write_paths,prepared.request.execution.setup,prepared.request.execution.verification])===hash([previousRequest.execution.write_paths,previousRequest.execution.setup,previousRequest.execution.verification]),'execution_scope_changed','A native execution session keeps its write scope, setup and verification commands; start a new task to change them');
-      }else workspace=createWorkspace(snapshot,dir,root);
+        const fixed=e=>[e.write_paths,e.setup,e.verification,workspaceOptions(e.workspace),e.checks??[],e.scratch_paths??[]];
+        requireValue(hash(fixed(prepared.request.execution))===hash(fixed(previousRequest.execution)),'execution_scope_changed','A native execution session keeps its workspace mode, write scope, setup and checks; start a new task to change them');
+        if(workspace.mode==='directory') {
+          const reportFile=path.join(taskDir(h,previous.task_id),'execution.json');
+          const report=fs.existsSync(reportFile)?readJson(reportFile,4*1024*1024):null;
+          if(report?.outcome==='verified')requireValue(captureChanges(workspace,prepared.request.execution,dir).snapshot_hash===report.snapshot_hash,'workspace_changed','Directory contents changed after verification; reconcile explicitly before continuing');
+        }
+      }
+      if(prepared.request.execution.workspace.mode==='directory'&&prepared.request.execution.workspace.target==='cwd') {
+          for(const task of all.filter(m=>m.workspace_owner&&!TERMINAL.has(m.state))) {
+            const active=readJson(path.join(taskDir(h,task.workspace_owner),'workspace.json'),8*1024*1024);
+            requireValue(!within(active.root,snapshot.cwd)&&!within(snapshot.cwd,active.root),'workspace_busy','Another active task uses an overlapping execution directory');
+          }
+      }
+      if(!workspace)workspace=createWorkspace(snapshot,dir,root,prepared.request);
       const executionPlan=path.join(dir,'execution-plan.json');
       atomicJson(executionPlan,{snapshot,workspace,directory:dir,request:workspaceRequest(prepared.request,workspace),session_id:previous?.session_id??null,run_setup:!previous});
       plan={command:process.execPath,args:[path.join(import.meta.dirname,'execution-worker.mjs'),executionPlan],cwd:workspace.cwd,env:environment(snapshot.provider),stdin_file:promptFile,receipt:path.join(dir,'receipt.json'),timeout_seconds:timeout};
@@ -133,7 +156,7 @@ export async function submit(h,{role,cwd,raw,requestId,overrides={},parentId=nul
     const planFile=path.join(dir,'command.json');atomicJson(planFile,plan);
     const now=new Date().toISOString();
     const m={task_id:key,root_task_id:root,parent_id:previous?.task_id??null,requested_parent_id:parentId,sequence:(previous?.sequence??-1)+1,
-      expected_session_id:previous?.session_id??null,host_id:h.host_id,state:'starting',snapshot,input_hash:signature,...(workspace?{workspace_owner:root}:{}),created_at:now,updated_at:now};
+      expected_session_id:previous?.session_id??null,host_id:h.host_id,state:'starting',snapshot,input_hash:signature,purpose:Array.from(prepared.request.goal).slice(0,500).join(''),purpose_truncated:Array.from(prepared.request.goal).length>500,...(workspace?{workspace_owner:root}:{}),created_at:now,updated_at:now};
     await withTaskLock(h,key,async()=>{
       atomicJson(metaPath(h,key),m);
       try {
@@ -157,9 +180,10 @@ export async function workspaceAction(h,key,action='inspect',{write=false}={}) {
   requireValue(['inspect','apply','discard'].includes(action),'invalid_input','Unknown workspace action');
   return withFileLock(path.join(h.state_dir,'submit.lock'),async()=>{
     const m=await refreshTask(h,key);requireValue(m.workspace_owner,'no_workspace','Task has no managed execution workspace');
-    const ownerDir=taskDir(h,m.workspace_owner),file=path.join(ownerDir,'workspace.json'),workspace=readJson(file);
+    const ownerDir=taskDir(h,m.workspace_owner),file=path.join(ownerDir,'workspace.json'),workspace=readJson(file,8*1024*1024);
     requireValue(workspace.owner===m.workspace_owner,'workspace_changed','Workspace owner mismatch');
-    requireValue(workspace.root===path.join(real(ownerDir),'worktree')&&workspace.source_cwd===m.snapshot.cwd,'workspace_changed','Workspace location differs from its owning task');
+    const expected=workspace.mode==='directory'?(workspace.owned?path.join(real(ownerDir),'output'):m.snapshot.cwd):path.join(real(ownerDir),'worktree');
+    requireValue(workspace.root===expected&&workspace.source_cwd===m.snapshot.cwd,'workspace_changed','Workspace location differs from its owning task');
     const turns=[];for(const id of taskKeys(h)){const t=readTask(h,id);if(t.workspace_owner===m.workspace_owner)turns.push(await refreshTask(h,id));}
     turns.sort((a,b)=>a.sequence-b.sequence);const latest=turns.at(-1);
     const reportFile=path.join(taskDir(h,latest.task_id),'execution.json'),report=fs.existsSync(reportFile)?readJson(reportFile,4*1024*1024):null;
@@ -167,12 +191,14 @@ export async function workspaceAction(h,key,action='inspect',{write=false}={}) {
     requireValue(turns.every(t=>TERMINAL.has(t.state)),'workspace_busy','Wait for or cancel every workspace task before applying/discarding');
     let result;
     if(action==='apply') {
+      requireValue(workspace.mode!=='directory','apply_unsupported','Directory deliverables are already in the reported directory; there is no apply step');
       requireValue(latest.task_id===key,'stale_parent',`Apply the latest task ${latest.task_id}`);
       requireValue(latest.state==='completed'&&report,'unverified_changes','Only a completed verified execution can be applied');
       result=applyChanges(workspace,readJson(path.join(taskDir(h,key),'request.json')).execution,report,taskDir(h,key),{write});
     }else {
       requireValue(workspace.state!=='discarded','workspace_closed','Workspace already discarded');
       result={written:write,workspace:workspace.root,unapplied_changes:workspace.state!=='applied'};
+      if(workspace.mode==='directory')result={written:write,workspace:workspace.root,removed:write&&workspace.owned,retained_directory:workspace.owned?null:workspace.root,rollback:false};
       if(write)discardWorkspace(workspace);
     }
     if(write) {

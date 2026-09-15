@@ -4,6 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {executable} from './adapters/common.mjs';
 import {atomicJson,readJson,real,within,requireValue,hash} from './core.mjs';
+import {createDirectory,assertDirectory,captureDirectory,discardDirectory} from './directories.mjs';
 
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 export function git(cwd,args,{env={},input}={}) {
@@ -20,7 +21,8 @@ export function cleanSource(root,base) {
   requireValue(git(root,['rev-parse','HEAD']).toString().trim()===base,'source_changed','Source HEAD changed; reconcile explicitly before applying');
   requireValue(git(root,['status','--porcelain=v1','--untracked-files=all']).length===0,'dirty_source','Commit or otherwise resolve source changes before creating/applying a workspace; AW does not stash them');
 }
-export function createWorkspace(snapshot,directory,owner) {
+export function createWorkspace(snapshot,directory,owner,request) {
+  if(request?.execution.workspace.mode==='directory')return createDirectory(snapshot,directory,owner,request);
   const source=repository(snapshot.cwd),base=git(source,['rev-parse','HEAD']).toString().trim();cleanSource(source,base);
   requireValue(!within(source,directory),'invalid_workspace_location','AW state directory must be outside the target repository');
   const manifest=path.join(directory,'workspace.json');
@@ -37,6 +39,7 @@ export function createWorkspace(snapshot,directory,owner) {
   atomicJson(path.join(directory,'workspace.json'),workspace);return workspace;
 }
 export function assertWorkspace(workspace) {
+  if(workspace.mode==='directory')return assertDirectory(workspace);
   requireValue(workspace.state==='retained','workspace_closed','Workspace has been applied or discarded; start a new task');
   requireValue(real(workspace.root)===workspace.root&&repository(workspace.root)===workspace.root,'workspace_changed','Owned worktree is missing or was replaced');
   requireValue(real(git(workspace.root,['rev-parse','--absolute-git-dir']).toString().trim())===workspace.git_dir,'workspace_changed','Worktree Git identity changed');
@@ -67,6 +70,7 @@ function safeEntry(root,name) {
 }
 // The private index captures new/deleted/binary files without staging the user's index.
 export function captureChanges(workspace,execution,directory) {
+  if(workspace.mode==='directory')return captureDirectory(workspace,execution);
   assertWorkspace(workspace);
   const index=path.join(directory,'capture.index'),env={GIT_INDEX_FILE:index};
   try {
@@ -85,6 +89,7 @@ export function captureChanges(workspace,execution,directory) {
   }finally {fs.rmSync(index,{force:true});fs.rmSync(index+'.lock',{force:true});}
 }
 export function applyChanges(workspace,execution,report,directory,{write=false}={}) {
+  requireValue(workspace.mode!=='directory','apply_unsupported','Directory mode writes its deliverables directly; it has no patch apply step');
   assertWorkspace(workspace);cleanSource(workspace.source_root,workspace.base_sha);
   requireValue(report.outcome==='verified','unverified_changes','Only verified execution changes can be applied');
   const current=captureChanges(workspace,execution,directory);
@@ -96,6 +101,7 @@ export function applyChanges(workspace,execution,report,directory,{write=false}=
   return {written:write,source_root:workspace.source_root,base_sha:workspace.base_sha,files:current.files,snapshot_hash:current.snapshot_hash};
 }
 export function discardWorkspace(workspace) {
+  if(workspace.mode==='directory')return discardDirectory(workspace);
   requireValue(['retained','applied'].includes(workspace.state),'workspace_closed','Workspace already discarded');
   assertWorkspace({...workspace,state:'retained'});
   git(workspace.source_root,['worktree','remove','--force',workspace.root]);

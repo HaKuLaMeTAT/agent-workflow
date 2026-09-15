@@ -13,17 +13,18 @@ export function configurationSnapshot(file) {
   const roles=Object.entries(host.roles).map(([id,r])=>({id,label:r.label,description:r.description,instructions:readText(r.instructions),access:r.access,binding:effectiveBinding(host,id)}));
   const revision=hash({raw,roles});
   return {host,raw,revision,view:{host_id:host.host_id,host_config:hostFile,revision,roles,
-    providers:Object.entries(host.providers).map(([id,p])=>({id,adapter:p.adapter,executable:p.executable,has_allowlist:p.models!==undefined,models:Object.entries(p.models??{}).map(([id,efforts])=>({id,efforts,allowed:true,verified:false,source:'configured'}))})),limits:host.limits}};
+    providers:Object.entries(host.providers).map(([id,p])=>({id,adapter:p.adapter,executable:p.executable,has_allowlist:p.models!==undefined,models:Object.entries(p.models??{}).map(([id,efforts])=>({id,efforts,allowed:true,verified:false,source:'configured'}))})),limits:host.limits,routing:host.routing}};
 }
 
 // One host file is the transaction boundary; both the CLI and UI use this writer.
-export async function editBindings(file,{changes,revision,write=false}) {
+export async function editBindings(file,{changes=[],routing,revision,write=false}) {
   requireValue(!write||process.env.AW_WORKER!=='1','delegation_forbidden','Read-only workers cannot edit configuration');
   const hostFile=loadHost(file).hostFile;
   const apply=()=>{
     const current=configurationSnapshot(hostFile),next=structuredClone(current.raw);
     if(revision!==undefined)requireValue(revision===current.revision,'config_conflict','配置已被其他操作更新。请重新读取后再编辑，当前草稿尚未保存。');
-    requireValue(Array.isArray(changes)&&changes.length>0&&changes.length<=Object.keys(current.host.roles).length,'invalid_input','Expected a nonempty list of role changes');
+    requireValue(Array.isArray(changes)&&(changes.length>0||routing!==undefined)&&changes.length<=Object.keys(current.host.roles).length,'invalid_input','Expected role changes or routing settings');
+    if(routing!==undefined){fields(routing,['enabled','roles','escalate_after','max_delegations'],'routing');next.routing={...current.host.routing,...routing,roles:{...current.host.routing.roles,...routing.roles}};}
     const seen=new Set();
     for(const change of changes) {
       fields(change,['role','patch','allow_model'],'change');text(change.role,'role');
@@ -51,6 +52,7 @@ export async function editBindings(file,{changes,revision,write=false}) {
       for(const field of EDITABLE)if(before[field]!==after[field])diff.push({role,label:defaults.label,field,before:before[field],after:after[field]});
     }
     for(const [id,p] of Object.entries(next.providers))if(JSON.stringify(p.models)!==JSON.stringify(current.raw.providers[id].models))diff.push({role:`provider:${id}`,label:`CLI ${id}`,field:'models',before:current.raw.providers[id].models,after:p.models});
+    if(routing!==undefined)for(const field of ['enabled','roles','escalate_after','max_delegations'])if(JSON.stringify(current.host.routing[field])!==JSON.stringify(validated.routing[field]))diff.push({role:'routing',label:'主控调度',field,before:current.host.routing[field],after:validated.routing[field]});
     if(write) {
       // Also detect edits made outside our lock before replacing the file.
       requireValue(configurationSnapshot(hostFile).revision===current.revision,'config_conflict','配置在保存前发生变化，请重新读取。');

@@ -45,7 +45,7 @@ export async function startUi({hostConfig,port=0,cwd=process.cwd()}={}) {
         send(200,{provider,available:result.available,error:result.error??result.catalog_error,models:result.models??[],cached:result.cached,checked_at:result.checked_at});return;
       }
       if(req.method==='POST'&&['/api/preview','/api/config'].includes(url.pathname)) {
-        const body=await jsonBody(req);fields(body,['revision','changes'],'request');text(body.revision,'revision');
+        const body=await jsonBody(req);fields(body,['revision','changes','routing'],'request');text(body.revision,'revision');
         const out=await editBindings(hostFile,{...body,write:url.pathname==='/api/config'});
         send(200,url.pathname==='/api/config'?out.snapshot:{revision:out.revision,changes:out.changes});return;
       }

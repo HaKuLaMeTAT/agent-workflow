@@ -37,22 +37,32 @@
       "enabled": false
     },
     "developer-basic": {
-      "enabled": false
+      "enabled": true,
+      "execution": "host"
     },
     "developer-main": {
-      "enabled": false
+      "enabled": true,
+      "execution": "host"
     },
     "developer-hard": {
-      "enabled": false
+      "enabled": false,
+      "execution": "worker",
+      "access": "workspace-write"
     },
     "reviewer": {
       "enabled": false
     },
     "analyst-primary": {
-      "enabled": false
+      "enabled": true,
+      "execution": "host"
     },
     "analyst-peer": {
       "enabled": false
     }
+  },
+  "routing": {
+    "enabled": false,
+    "escalate_after": 2,
+    "max_delegations": 3
   }
 }

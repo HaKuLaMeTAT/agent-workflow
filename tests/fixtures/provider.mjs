@@ -36,6 +36,14 @@ if(args.includes('--input-format')) {
         if(request.goal==='quota')throw new Error('usage quota reached');
         if(request.goal==='write-denied') {
           if(await permission('edit','evidence.md'))fs.writeFileSync('forbidden.txt','wrong permission');
+        }else if(request.execution?.workspace?.mode==='directory') {
+          if(!capabilities.fs.writeTextFile)throw new Error('Missing writable client capability');
+          const input=fs.existsSync('input.txt')?(await rpc('fs/read_text_file',{path:path.resolve('input.txt')})).content:'generated';
+          for(const [name,content] of directoryContents(request,resumed,input)) {
+            const file=path.resolve(name);if(!await permission('edit',file))throw new Error('directory write denied');
+            await rpc('fs/write_text_file',{path:file,content});
+          }
+          update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(implementation(input))}});
         }else if(request.execution) {
           if(!capabilities.fs.writeTextFile)throw new Error('Missing writable client capability');
           const before=(await rpc('fs/read_text_file',{path:path.resolve('src/math.mjs')})).content;
@@ -81,6 +89,13 @@ if(args.includes('--input-format')) {
     if(backend==='opencode')emit({type:'error',sessionID:sessionId,error:{message:'usage quota reached'}});
     process.exitCode=1;
   }else {
+    if(request.execution?.workspace?.mode==='directory') {
+      const input=fs.existsSync('input.txt')?fs.readFileSync('input.txt','utf8'):'generated';
+      const resumed=args.includes('--resume')||args.includes('--session')||args.includes('resume');
+      for(const [name,content] of directoryContents(request,resumed,input)){fs.mkdirSync(path.dirname(name),{recursive:true});fs.writeFileSync(name,content);}
+      if(request.goal==='directory-outside')fs.writeFileSync('untouched.txt','outside change');
+      nativeResult(backend,sessionId,implementation(input));process.exit(0);
+    }
     if(request.execution) {
       if(backend==='claude'&&!args.includes('--dangerously-skip-permissions')&&(value('--tools')!=='Read,Glob,Grep,Edit,Write'||value('--permission-mode')!=='dontAsk'||!value('--allowedTools').includes('Edit(./src/**)')))throw new Error('Missing scoped editing policy');
       if(backend==='codex'&&!args.includes('sandbox_mode="workspace-write"')&&!args.includes('sandbox_mode="danger-full-access"'))throw new Error('Missing writable sandbox');
@@ -109,4 +124,9 @@ function nativeResult(backend,sessionId,result) {
   if(backend==='claude')emit({type:'result',is_error:false,session_id:sessionId,structured_output:result});
   if(backend==='codex'){emit({type:'item.completed',item:{type:'agent_message',text:JSON.stringify(result)}});emit({type:'turn.completed',usage:{input_tokens:2,output_tokens:3}});}
   if(backend==='opencode'){emit({type:'text',sessionID:sessionId,part:{text:JSON.stringify(result)}});emit({type:'step_finish',sessionID:sessionId,part:{reason:'stop'}});}
+}
+
+function directoryContents(request,resumed,input) {
+  const good=request.goal!=='directory-fix'||resumed;
+  return [['out/report.md',input+'\nDocument generated.\n'],['out/result.json',good?JSON.stringify({source:input,ok:true}):'{incomplete']];
 }

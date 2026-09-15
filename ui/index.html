@@ -17,15 +17,16 @@
     </header>
     <main>
       <section class="intro" aria-labelledby="page-title">
-        <div><p class="eyebrow">YOUR TEAM, YOUR CHOICE</p><h1 id="page-title">让每个角色，各司其职。</h1><p class="subtitle">在这里调整协作分工，保存后供新任务使用。</p></div>
+        <div><p class="eyebrow">YOUR TEAM, YOUR CHOICE</p><h1 id="page-title">让每个角色，各司其职。</h1><p class="subtitle">基础和日常开发由 Codex 主入口承担；建议在这里配置攻坚升级、设计、审查和专项执行。</p></div>
         <div class="host-stamp"><span>当前主机</span><strong id="host-name">连接中</strong><span id="role-count">正在读取配置…</span></div>
       </section>
+      <label class="enable-row" for="automatic-routing"><span><strong>Codex 主控自动调度</strong><small>日常开发留在主对话；遇到明确难点或专项任务，再调用已配置的外部角色。</small></span><input id="automatic-routing" type="checkbox" role="switch" disabled></label>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <div class="workspace" id="workspace" hidden>
         <aside class="roster" aria-label="角色列表">
           <div class="section-label"><span>角色目录</span><span id="roster-count" class="mono"></span></div>
           <nav id="roles" aria-label="选择要编辑的角色"></nav>
-          <p class="roster-footnote">职责保持清晰。<br>模型与档位，按需选择。</p>
+          <p class="roster-footnote">优先配置升级和专项角色。<br>主入口职责无需另绑模型。</p>
         </aside>
         <section class="editor" aria-labelledby="role-title">
           <div class="editor-heading"><div><p id="role-id" class="eyebrow mono"></p><h2 id="role-title"></h2></div><span id="role-state" class="pill"></span></div>
@@ -33,14 +34,14 @@
           <form id="binding-form">
             <fieldset id="binding-fields">
               <legend class="sr-only">角色绑定</legend>
-              <div class="field full"><label for="provider">使用的 CLI <span>PROVIDER</span></label><select id="provider" name="provider" required></select></div>
-              <div class="model-row"><label for="model">模型 <span>MODEL</span></label><button id="refresh-models" class="text-button" type="button">↻ 读取模型目录</button></div>
-              <div class="field full"><input id="model" name="model" list="model-options" autocomplete="off" spellcheck="false" placeholder="选择或输入模型 ID"><datalist id="model-options"></datalist><p id="model-help" class="field-help"></p></div>
-              <label class="enable-row full" for="allow-model"><span><strong>将所选模型与档位加入允许列表</strong><small>同时更新此 CLI 的允许列表；实际可用性在启动任务时验证。</small></span><input id="allow-model" type="checkbox"></label>
-              <div class="field"><label for="effort">推理档位 <span>EFFORT</span></label><input id="effort" name="effort" list="effort-options" autocomplete="off" spellcheck="false" placeholder="选择档位，或留空"><datalist id="effort-options"></datalist><p class="field-help">留空表示不指定；模型须支持该选项。</p></div>
+              <div data-worker-field class="field full"><label for="provider">使用的 CLI <span>PROVIDER</span></label><select id="provider" name="provider" required></select></div>
+              <div data-worker-field class="model-row"><label for="model">模型 <span>MODEL</span></label><button id="refresh-models" class="text-button" type="button">↻ 读取模型目录</button></div>
+              <div data-worker-field class="field full"><input id="model" name="model" list="model-options" autocomplete="off" spellcheck="false" placeholder="选择或输入模型 ID"><datalist id="model-options"></datalist><p id="model-help" class="field-help"></p></div>
+              <label data-worker-field class="enable-row full" for="allow-model"><span><strong>将所选模型与档位加入允许列表</strong><small>同时更新此 CLI 的允许列表；实际可用性在启动任务时验证。</small></span><input id="allow-model" type="checkbox"></label>
+              <div data-worker-field class="field"><label for="effort">推理档位 <span>EFFORT</span></label><input id="effort" name="effort" list="effort-options" autocomplete="off" spellcheck="false" placeholder="选择档位，或留空"><datalist id="effort-options"></datalist><p class="field-help">留空表示不指定；模型须支持该选项。</p></div>
               <div class="field"><label for="execution">执行位置 <span>EXECUTION</span></label><select id="execution" name="execution"><option value="worker">独立辅助任务</option><option value="host">当前主对话</option></select><p class="field-help">决定由哪个会话承担这个角色；写入能力由角色权限决定。</p></div>
               <div class="field"><label for="access">写入能力</label><select id="access"><option value="read-only">只读</option><option value="workspace-write">可修改文件</option></select></div>
-              <div class="field"><label for="permissions">权限策略</label><select id="permissions"><option value="restricted">受限权限（默认）</option><option value="full-access">完整权限：文件、命令与网络</option></select></div>
+              <div data-worker-field class="field"><label for="permissions">权限策略</label><select id="permissions"><option value="restricted">受限权限（默认）</option><option value="full-access">完整权限：文件、命令与网络</option></select></div>
               <div class="execution-note full"><span aria-hidden="true">↳</span><p id="execution-note"></p></div>
               <label class="enable-row full" for="enabled"><span><strong>启用这个角色</strong><small>关闭后，新任务不能调用此角色。</small></span><input id="enabled" name="enabled" type="checkbox" role="switch"></label>
             </fieldset>

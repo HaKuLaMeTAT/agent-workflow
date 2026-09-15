@@ -8,10 +8,13 @@ import {executable} from '../src/adapters/common.mjs';
 import {readJson,requireValue} from '../src/core.mjs';
 import {submit,status,wait,result,cancel,recover,workspaceAction} from '../src/tasks.mjs';
 import {editBindings} from '../src/config-editor.mjs';
+import {routeTask} from '../src/routing.mjs';
 const HELP=`aw init --output FILE [--preset home|office]
+aw routing [--enable|--disable] [--write]
+aw route --kind code|artifact|design|review|analysis|conversation [--complexity trivial|simple|standard|complex] [--failed-attempts N] [--delegations N] [--cwd PATH]
 aw ui [--port PORT] [--host-config FILE]  Local browser editor; loopback only
 aw providers [--refresh] | models PROVIDER [--refresh]
-aw roles | prepare|resolve --role ID|--workflow NAME --cwd PATH
+aw roles | prepare|resolve --role ID|--workflow NAME --cwd PATH [--workspace-mode git-worktree|directory]
 aw configure --role ID --provider ID --model ID --effort LEVEL|--no-effort [--execution host|worker] [--access read-only|workspace-write] [--permissions restricted|full-access] [--allow-model] [--write]
 aw run --role ID|--workflow NAME --cwd PATH --request-file FILE --request-id ID
 aw status|recover|cancel TASK | wait TASK --timeout 45 | result TASK [--cursor 0]
@@ -19,10 +22,10 @@ aw followup TASK --request-file FILE --request-id ID
 aw workspace TASK | apply TASK [--write] | discard TASK [--write]
 Global: --host-config FILE. JSON output. No implicit installation, fallback, or task submission.`;
 try {
-  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','access','permissions','port'];
-  const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'},'allow-model':{type:'boolean'}}});
+  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','access','permissions','workspace-mode','port','kind','complexity','failed-attempts','delegations'];
+  const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),enable:{type:'boolean'},disable:{type:'boolean'},help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'},'allow-model':{type:'boolean'}}});
   const command=p[0];if(v.help||command==='help'||!command){console.log(HELP);process.exit(0);}
-  const allowed={ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh'],configure:['role','provider','model','effort','no-effort','execution','access','permissions','allow-model','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
+  const allowed={routing:['enable','disable','write'],route:['kind','complexity','failed-attempts','delegations','cwd'],ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh','workspace-mode'],configure:['role','provider','model','effort','no-effort','execution','access','permissions','allow-model','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
   requireValue(Object.hasOwn(allowed,command),'invalid_command',HELP);
   const positional=['models','status','recover','wait','result','followup','cancel','workspace','apply','discard'].includes(command);
   requireValue(p.length===(positional?2:1),'invalid_input',positional?'Exactly one provider/task ID required':'Unexpected positional arguments');
@@ -50,7 +53,16 @@ try {
     await new Promise(resolve=>ui.server.once('close',resolve));process.exit(0);
   }
   const overrides={...(v.model?{model:v.model}:{}),...(v.effort?{effort:v.effort}:{}),...(v['no-effort']?{effort:null}:{}),...(v.workflow?{workflow:v.workflow}:{})};
-  if(command==='roles')output=Object.entries(h.roles).map(([role,r])=>({role,label:r.label,description:r.description,...h.bindings[role],execution:h.bindings[role]?.execution??r.execution,adapter:h.providers[h.bindings[role]?.provider]?.adapter??null}));
+  if(command==='routing') {
+    requireValue(!v.enable||!v.disable,'invalid_input','Choose enable or disable');
+    requireValue(!v.write||v.enable||v.disable,'invalid_input','Specify enable or disable when writing');
+    output=v.enable||v.disable?await editBindings(h.hostFile,{routing:{enabled:!!v.enable},write:!!v.write}):h.routing;
+  }
+  if(command==='route')output=routeTask(h,v.cwd??process.cwd(),{kind:v.kind,complexity:v.complexity,failed_attempts:Number(v['failed-attempts']??0),delegations:Number(v.delegations??0)});
+  if(command==='roles')output=Object.entries(h.roles).map(([role,r])=>{
+    const b=h.bindings[role],execution=b?.execution??r.execution;
+    return {role,label:r.label,description:r.description,...b,execution,...(execution==='host'?{provider:null,model:null,effort:null,adapter:null}:{adapter:h.providers[b?.provider]?.adapter??null})};
+  });
   if(command==='providers') {
     output=[];for(const name of Object.keys(h.providers)){
       const value=await discover(h,name,{cwd:v.cwd,refresh:v.refresh});const {models,...capabilities}=value;output.push({...capabilities,configured_model_count:models.length});
@@ -58,7 +70,7 @@ try {
   }
   if(command==='models')output=await discover(h,p[1],{cwd:v.cwd,catalog:true,refresh:v.refresh});
   if(command==='resolve'||command==='prepare') {
-    const selected=await prepareRole(h,resolveRole(h,v.role,v.cwd??process.cwd(),overrides),{refresh:v.refresh});
+    const selected=await prepareRole(h,resolveRole(h,v.role,v.cwd??process.cwd(),overrides),{refresh:v.refresh,workspaceMode:v['workspace-mode']});
     output={...publicRole(selected,{instructions:command==='prepare'}),next_action:selected.role.execution==='host'?'Apply these instructions in the current host; model changes require host/UI support':selected.runnable?'run with the same role/workflow and bounded request':'Resolve the reported capability/configuration issue'};
   }
   if(command==='configure') {

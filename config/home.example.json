@@ -37,7 +37,7 @@
       "provider": "claude-local",
       "model": "claude-sonnet-5",
       "effort": "high",
-      "enabled": false
+      "enabled": true
     },
     "designer": {
       "provider": "claude-local",
@@ -46,22 +46,21 @@
       "enabled": true
     },
     "developer-basic": {
-      "provider": "codex-local",
-      "model": "gpt-6-astra",
-      "effort": "low",
-      "enabled": true
+      "enabled": true,
+      "execution": "host"
     },
     "developer-main": {
-      "provider": "codex-local",
-      "model": "gpt-6-astra",
-      "effort": "medium",
-      "enabled": true
+      "enabled": true,
+      "execution": "host"
     },
     "developer-hard": {
-      "provider": "codex-local",
-      "model": "gpt-6-astra",
-      "effort": "xhigh",
-      "enabled": true
+      "enabled": true,
+      "execution": "worker",
+      "access": "workspace-write",
+      "permissions": "restricted",
+      "provider": "claude-local",
+      "model": "claude-opus-5",
+      "effort": "high"
     },
     "reviewer": {
       "provider": "claude-local",
@@ -70,10 +69,8 @@
       "enabled": true
     },
     "analyst-primary": {
-      "provider": "codex-local",
-      "model": "gpt-6-astra",
-      "effort": "medium",
-      "enabled": true
+      "enabled": true,
+      "execution": "host"
     },
     "analyst-peer": {
       "provider": "claude-local",
@@ -87,5 +84,10 @@
     "default_timeout_seconds": 1200,
     "summary_max_chars": 4000,
     "result_page_max_chars": 8000
+  },
+  "routing": {
+    "enabled": true,
+    "escalate_after": 2,
+    "max_delegations": 3
   }
 }
