@@ -15,7 +15,7 @@ export function executable(command) {
 }
 export function environment(provider) {
   const env={};
-  for(const key of ['HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR','PATH','CODEX_HOME','USERPROFILE','APPDATA','LOCALAPPDATA','SystemRoot','WINDIR','ComSpec','PATHEXT','TEMP','TMP','HOMEDRIVE','HOMEPATH',...(provider.inherit_env??[])])if(envValue(key))env[key]=envValue(key);
+  for(const key of ['HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR','PATH','CODEX_HOME','DSH_HOME','USERPROFILE','APPDATA','LOCALAPPDATA','SystemRoot','WINDIR','ComSpec','PATHEXT','TEMP','TMP','HOMEDRIVE','HOMEPATH',...(provider.inherit_env??[])])if(envValue(key))env[key]=envValue(key);
   env.PATH=[path.dirname(provider.executable),path.dirname(process.execPath),env.PATH].filter(Boolean).join(path.delimiter);
   env.AW_WORKER='1';
   return env;

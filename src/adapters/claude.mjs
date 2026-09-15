@@ -2,6 +2,7 @@ import {spawnCli as spawn,stopChild} from '../process.mjs';
 import {createInterface} from 'node:readline';
 import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape} from './common.mjs';
 import {resultSchema} from '../result.mjs';
+import {requireValue} from '../core.mjs';
 const required=['--safe-mode','--restricted','--tools','--strict-mcp-config','--permission-prompts','--json-schema','--resume','--effort'];
 const controls=['--safe-mode','--restricted','--permission-mode','plan','--permission-prompts','none','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--setting-sources',''];
 
@@ -42,14 +43,16 @@ export const claude={
     const ready=required.every(flag=>help.includes(flag));let models=[],catalog_error=null;
     if(ready&&context.catalog)try{models=await catalog(provider,context.cwd);}catch(e){catalog_error=e.message;}
     const writing=ready&&['--allowedTools','--permission-mode'].every(flag=>help.includes(flag));
-    return {available:ready,version:version.trim(),capabilities:{read_only:ready,workspace_write:writing,verification:'aw-supervised-argv',resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'CLI restricted file tools; not an OS sandbox',execution_guarantee:'CLI restricted file tools with scoped edit rules in an owned worktree; AW runs declared commands as the current OS user. No OS or network sandbox.'};
+    return {available:ready,version:version.trim(),capabilities:{read_only:ready,workspace_write:writing,full_access:writing&&help.includes('--dangerously-skip-permissions'),verification:'aw-supervised-argv',resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'CLI restricted file tools; not an OS sandbox',execution_guarantee:'CLI restricted file tools with scoped edit rules in an owned worktree; AW runs declared commands as the current OS user. No OS or network sandbox.',full_access_guarantee:'Claude permission bypass for file, shell and web tools. Customizations/MCP/delegation disabled; host and network access are unrestricted. Not an OS sandbox.'};
   },
   prepare(snapshot,files,sessionId) {
-    const writing=snapshot.role.access==='workspace-write';
+    const writing=snapshot.role.access==='workspace-write',full=snapshot.role.permissions==='full-access';
     if(!writing)permissionShape(snapshot.role.access);
+    requireValue(!full||writing,'permission_unsupported','Full access requires workspace-write');
     const policy=[...controls];if(writing)policy[policy.indexOf('plan')]='dontAsk';
-    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...policy,'--tools',writing?'Read,Glob,Grep,Edit,Write':'Read,Glob,Grep','--json-schema',JSON.stringify(resultSchema(snapshot.role.result_contract))];
-    if(writing) {
+    if(full){policy.splice(policy.indexOf('--restricted'),1);policy[policy.indexOf('dontAsk')]='bypassPermissions';policy.push('--dangerously-skip-permissions');}
+    const args=[...(snapshot.provider.args??[]),'--print','--output-format','stream-json','--verbose','--model',snapshot.model,...policy,'--tools',full?'Read,Glob,Grep,Edit,Write,Bash,PowerShell,WebFetch,WebSearch':writing?'Read,Glob,Grep,Edit,Write':'Read,Glob,Grep','--json-schema',JSON.stringify(resultSchema(snapshot.role.result_contract))];
+    if(writing&&!full) {
       const rules=['Read','Glob','Grep'];
       for(const p of snapshot.execution.write_paths)for(const tool of ['Edit','Write'])rules.push(`${tool}(./${p})`,`${tool}(./${p}/**)`);
       args.push('--allowedTools',rules.join(','));

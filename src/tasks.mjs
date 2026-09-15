@@ -76,6 +76,7 @@ export async function submit(h,{role,cwd,raw,requestId,overrides={},parentId=nul
     // Reapply current permission/project revocations, while keeping the native conversation's runtime/model pinned.
     const policy=resolveRole(h,parent.snapshot.role_id,parent.snapshot.cwd);
     requireValue(policy.role.execution==='worker'&&policy.role.access===parent.snapshot.role.access&&!policy.role.can_delegate,'role_not_executable','Current policy no longer permits this worker');
+    requireValue((policy.role.permissions??'restricted')===(parent.snapshot.role.permissions??'restricted'),'permissions_changed','Permission preset changed; start an explicit new task instead of changing an existing session');
     requireValue(policy.provider_id===parent.snapshot.provider_id&&hash(policy.provider)===hash(parent.snapshot.provider),'provider_changed','Provider changed; start an explicit new conversation instead of silently migrating a native session');
     snapshot={...parent.snapshot,role:policy.role,project_instructions:policy.project_instructions,project_policy_files:policy.project_policy_files,runtime:policy.runtime};
   }else snapshot=resolveRole(h,role,cwd,overrides);

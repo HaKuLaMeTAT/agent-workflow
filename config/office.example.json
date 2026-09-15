@@ -20,6 +20,13 @@
       ],
       "auth": "cli-managed",
       "inherit_env": []
+    },
+    "codex-local": {
+      "adapter": "codex",
+      "executable": "codex",
+      "args": [],
+      "auth": "cli-managed",
+      "inherit_env": []
     }
   },
   "bindings": {

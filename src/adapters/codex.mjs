@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import {command,environment,events,baseObservation,errorCode,parseObject,usage,permissionShape} from './common.mjs';
-import {readJson} from '../core.mjs';
+import {readJson,requireValue} from '../core.mjs';
 const required=['--ignore-user-config','--ignore-rules','--sandbox','--output-schema','--json'];
 export const codex={
   id:'codex',defaultExecutable:'codex',
@@ -16,14 +16,16 @@ export const codex={
         models=(cache.models??[]).map(m=>({id:m.slug??m.id,efforts:(m.supported_reasoning_levels??[]).map(x=>x.effort??x),source:'cli_cache',verified:false})).filter(m=>typeof m.id==='string');
       }catch{catalog_error='CLI model cache unavailable; use explicit configured models';}
     }
-    return {available:ready,version:version.trim(),capabilities:{read_only:ready,resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'Codex read-only shell sandbox; MCP/delegation disabled'};
+    return {available:ready,version:version.trim(),capabilities:{read_only:ready,workspace_write:ready,full_access:ready,resume:ready,structured_output:ready,model_catalog:models.length>0},models,catalog_error,guarantee:'Codex read-only shell sandbox; MCP/delegation disabled',execution_guarantee:'Codex workspace-write sandbox with network disabled; write_paths checked on the resulting diff. AW verification runs as the OS user outside this sandbox.',full_access_guarantee:'Codex danger-full-access with approval_policy=never: native commands can access the host and network. Worktree/diff validation is not an OS sandbox.'};
   },
   prepare(snapshot,files,sessionId) {
-    permissionShape(snapshot.role.access);
+    const writing=snapshot.role.access==='workspace-write',full=snapshot.role.permissions==='full-access';
+    if(!writing)permissionShape(snapshot.role.access);
+    requireValue(!full||writing,'permission_unsupported','Full access requires workspace-write');
     const args=[...(snapshot.provider.args??[]),'exec'];
     if(sessionId)args.push('resume',sessionId);
     args.push('--ignore-user-config','--ignore-rules','--skip-git-repo-check','--json','--output-schema',files.schema,'--model',snapshot.model,
-      '-c','approval_policy="never"','-c','sandbox_mode="read-only"','-c','mcp_servers={}',
+      '-c','approval_policy="never"','-c',`sandbox_mode="${full?'danger-full-access':writing?'workspace-write':'read-only'}"`,'-c','sandbox_workspace_write.network_access=false','-c','mcp_servers={}',
       '-c','features.multi_agent=false','-c','features.apps=false','-c','features.hooks=false','-c','web_search="disabled"');
     if(snapshot.effort!==null)args.push('-c',`model_reasoning_effort=${JSON.stringify(snapshot.effort)}`);
     args.push('-');

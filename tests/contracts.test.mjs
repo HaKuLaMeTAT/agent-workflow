@@ -25,7 +25,7 @@ test('configuration editor: validated preview, atomic batch save and stale revis
   await assert.rejects(editBindings(file,{...request,write:true}),{code:'config_conflict'});
   const validBytes=fs.readFileSync(file,'utf8');
   await assert.rejects(editBindings(file,{changes:[{role:'reviewer',patch:{effort:'xhigh'}}],write:true}),{code:'unsupported_effort'});
-  await assert.rejects(editBindings(file,{changes:[{role:'reviewer',patch:{access:'workspace-write'}}],write:true}),{code:'invalid_config'});
+  await assert.rejects(editBindings(file,{changes:[{role:'reviewer',patch:{access:'workspace-write'}}],write:true}),{code:'permission_escalation'});
   assert.equal(fs.readFileSync(file,'utf8'),validBytes);
 });
 test('configuration contract: host binding, project restrictions and explicit overrides',t=>{
@@ -99,4 +99,26 @@ test('result contract: complete Unicode pagination preserves blockers; provider 
   await assert.rejects(parseTranscript(file),{code:'quota_exhausted'});
   fs.writeFileSync(file,'{"type":"assistant"}\n');
   await assert.rejects(parseTranscript(file),{code:'invalid_result'});
+});
+
+test('executor configuration: explicit permission changes and atomic model allowlist extension',async t=>{
+  const dir=temporary(t),file=path.join(dir,'host.json'),raw=readJson(path.join(TOOL_ROOT,'config/home.example.json'));
+  raw.catalog=path.join(TOOL_ROOT,'config/roles.json');raw.providers['codex-local'].models={'gpt-6-astra':['low','medium','high','xhigh']};atomicJson(file,raw);
+  const patch={enabled:true,provider:'codex-local',model:'gpt-5.6-luna',effort:'low',execution:'worker',access:'workspace-write',permissions:'full-access'};
+  const original=fs.readFileSync(file,'utf8');
+  await assert.rejects(editBindings(file,{changes:[{role:'executor',patch}],write:true}),{code:'unsupported_model'});
+  assert.equal(fs.readFileSync(file,'utf8'),original);
+  const change={role:'executor',patch,allow_model:true},preview=await editBindings(file,{changes:[change]});
+  assert.ok(preview.changes.some(c=>c.field==='models'));assert.equal(fs.readFileSync(file,'utf8'),original);
+  await editBindings(file,{revision:preview.revision,changes:[change],write:true});
+  const selected=resolveRole(loadHost(file),'executor',dir);
+  assert.equal(selected.model,'gpt-5.6-luna');assert.equal(selected.effort,'low');assert.equal(selected.role.permissions,'full-access');
+  assert.deepEqual(readJson(file).providers['codex-local'].models['gpt-6-astra'],raw.providers['codex-local'].models['gpt-6-astra']);
+  await editBindings(file,{changes:[{role:'executor',patch:{effort:'max'},allow_model:true}],write:true});
+  assert.deepEqual(readJson(file).providers['codex-local'].models['gpt-5.6-luna'],['low','max']);
+  await editBindings(file,{changes:[{role:'executor',patch:{effort:null}}],write:true});
+  assert.equal(resolveRole(loadHost(file),'executor',dir).effort,null);
+  await assert.rejects(editBindings(file,{changes:[{role:'reviewer',patch:{permissions:'full-access'}}],write:true}),{code:'permission_escalation'});
+  await editBindings(file,{changes:[{role:'developer-basic',patch:{execution:'worker',access:'workspace-write',permissions:'full-access'}}],write:true});
+  assert.equal(resolveRole(loadHost(file),'developer-basic',dir).role.can_delegate,false);
 });

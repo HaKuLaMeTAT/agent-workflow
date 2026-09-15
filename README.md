@@ -2,7 +2,7 @@
 
 以 Codex App / Codex CLI 为主入口，调用可配置的本地 AI CLI 完成实现、方案设计、独立审查和交叉分析。辅助任务拥有独立上下文，主任务先读取摘要，再按需读取证据。
 
-Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.4**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
+Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.4.1**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
 
 ## 功能
 
@@ -11,7 +11,7 @@ Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用
 - **按主机配置角色**：职责与 CLI、模型、推理档位分离，可在不同电脑使用不同绑定。
 - **本地配置界面**：`aw ui` 查看职责、编辑绑定、预览差异并保存；新任务读取更新后的配置。
 - **多 CLI 适配**：Claude Code、Codex、OpenCode，以及 ACP 兼容 CLI（包括 DSH）。
-- **完整执行任务**：Claude executor 在独立 worktree 中读写，AW 运行指定测试，并在任务预算内续用原会话修复。
+- **完整执行任务**：Claude、Codex、OpenCode、DSH / ACP 在独立 worktree 中读写，AW 运行指定测试，并在任务预算内续用原会话修复。
 - **任务交接与接收**：携带当前状态、失败尝试和验收条件；检查实际差异与测试记录后接收，工作区单独清理。
 - **显式协作**：按角色或项目工作流分派任务；保留只读顾问，不自动切换模型或递归委派。
 - **可恢复任务**：后台执行、状态查询、取消、原生会话续接和幂等请求。
@@ -42,9 +42,9 @@ aw ui
 aw ui --port 43121 --host-config /absolute/private/host.json
 ```
 
-在本机浏览器打开命令输出的完整链接，可修改已有角色的 CLI、模型、推理档位、执行位置及启停状态，并查看职责文本。支持多角色草稿、保存前差异预览、配置校验与版本冲突保护。
+在本机浏览器打开命令输出的完整链接，可修改已有角色的 CLI、模型、推理档位、执行位置、写入能力、权限策略及启停状态，并查看职责文本。支持多角色草稿、保存前差异预览、配置校验与版本冲突保护。
 
-页面首先显示配置中的模型；“读取模型目录”调用目标 CLI 的目录探测。无草稿时自动读取外部配置变化，有草稿时保留修改并提示冲突。新增角色、CLI、模型允许列表和职责文本继续通过配置文件维护。
+页面首先显示配置中的模型；“读取模型目录”调用目标 CLI 的目录探测。无草稿时自动读取外部配置变化，有草稿时保留修改并提示冲突。可手动输入模型 ID 与档位，勾选“将所选模型与档位加入允许列表”后一起预览、保存。新增角色、CLI 和职责文本通过配置文件维护。
 
 界面仅监听 `127.0.0.1`，默认选择空闲端口，`Ctrl+C` 关闭。访问链接包含本次启动的凭据，不应分享。没有远程访问或自启；其他电脑不能直接使用这个回环地址。
 
@@ -58,7 +58,7 @@ aw ui --port 43121 --host-config /absolute/private/host.json
 | 主机绑定 | CLI、模型、推理档位、执行位置与启停状态 | [home 模板](config/home.example.json)、[office 模板](config/office.example.json) |
 | 项目工作流 | 允许使用的角色、项目指令和工作流名称映射 | [project.example.json](config/project.example.json) |
 
-预设名称 `home` 和 `office` 分别提供 Codex / Claude 与 OpenCode / ACP 的配置示例。模型名称和档位仅作示例，使用前应按自己的 CLI 目录核对。实际配置不要提交到版本库。
+预设名称 `home` 和 `office` 分别提供 Codex / Claude 与 OpenCode / ACP / Codex 的配置示例。模型名称和档位仅作示例，使用前应按自己的 CLI 目录核对。实际配置不要提交到版本库。
 
 默认主机配置在 Linux / WSL 上是 `~/.config/agent-workflow/host.json`，Windows 上是 `%LOCALAPPDATA%/agent-workflow/host.json`，可用 `AW_HOST_CONFIG` 或 `--host-config FILE` 覆盖。命令行也可编辑绑定：
 
@@ -68,11 +68,32 @@ aw configure --role reviewer --provider claude-local \
 # 核对预览后，在同一命令末尾加 --write 保存。
 ```
 
-`configure` 默认只输出预览。没有推理档位时使用 `--no-effort`；`--effort none` 表示后端真正的 `none` 选项。`providers[].models` 可省略以使用发现目录；填写时作为主机允许列表，不能冒充服务端验证。
+`configure` 默认只输出预览。没有推理档位时使用 `--no-effort`；`--effort none` 表示后端真正的 `none` 选项。`providers[].models` 可省略以使用发现目录；填写时作为主机允许列表。`configure --allow-model` 会将本次所选模型与档位加入该列表，保留其他条目；这不代表服务端已验证可用。
 
-`host` 角色由当前主对话承担，**aw 不会改变当前 Codex App / CLI 的模型设置**。`worker` 的权限由角色和绑定决定。现有顾问/审查角色保持只读；新增 `executor` 可在独立工作区内读写并完成验证，初始禁用，绑定到本机 Claude 后启用。将旧 host 开发角色改为 worker 时仍默认只读；建议使用专用 executor，避免混淆。
+`host` 角色由当前主对话承担，**aw 不会改变当前 Codex App / CLI 的模型设置**。`worker` 的权限由角色和绑定决定。现有顾问/审查角色保持只读；新增 `executor` 可在独立工作区内读写并完成验证，初始禁用，可绑定到上述任一 adapter。将旧 host 开发角色改为 worker 时仍默认只读；显式配置 `--access workspace-write` 可启用其完整执行路径。
 
 保存后，新任务读取新绑定。已有任务保持原生会话及创建时的模型、档位；切换 provider 后，旧会话可能不能继续追问。
+
+### 自选模型与执行权限
+
+Codex 和其他 CLI 一样可在 UI 中选择模型或手动输入 ID，推理档位随所选模型更新。Codex 默认模板不设置模型允许列表，不固定为 Luna；旧配置中的允许列表可显式扩充，或删除 provider 的 `models` 字段以取消该列表。CLI 缓存只是候选目录，缓存外手填的 Codex 模型会交给实际调用验证。
+
+例如将 executor 绑定到一个 Codex 快速模型（Luna 仅为示例）：
+
+```text
+aw configure --role executor --provider codex-local --model gpt-5.6-luna --effort low --access workspace-write --permissions full-access --allow-model
+```
+
+检查输出后加 `--write` 保存；也可在 `aw ui` 中完成。要保留限制，选择 `--permissions restricted`。`gpt-5.6-luna` 是模型 ID；是否可用由本机 CLI 和账户决定。Codex worker 使用同一账户时仍会消耗 Codex 额度，此功能不承诺总 token 节省。
+
+| adapter | `restricted`（默认） | `full-access`（显式配置） |
+| --- | --- | --- |
+| Claude | 限定读写工具及写入路径 | 文件、Bash / PowerShell、网页工具，跳过 CLI 权限询问 |
+| Codex | 原生 workspace-write 沙箱，禁用网络；交付后校验写入范围 | danger-full-access，允许本机命令与网络 |
+| OpenCode | 限定 edit 路径，禁止终端及外部目录 | 原生工具与命令；禁用 task、question、skill |
+| DSH / ACP | 客户端文件读写与路径权限；DSH 关联工具元数据 | 文件与终端能力、原生命令；未知 DSH 插件仍拒绝 |
+
+两档都执行声明的验收命令、保留会话续接预算，并检查可接收的改动。完整权限仅适用于可写 implementation 角色；配置和权限在任务创建时固定，已有会话不会被重新配置扩大权限。CLI 管理员策略仍然适用，AW 不会在受限模式失败时自动放开权限。
 
 ## 完整执行任务
 
@@ -89,9 +110,9 @@ aw apply TASK_ID --write
 aw discard TASK_ID --write
 ```
 
-`apply` 默认检查并预览；`--write` 才应用，不暂存或提交。`discard --write` 删除已无活动任务的自有 worktree，应在变更已接收或明确放弃后执行。准备步骤只运行一次；断言失败可以在 `max_attempts` 内续用 Claude 修复，认证、额度、权限、超时和范围错误直接停止。
+`apply` 默认检查并预览；`--write` 才应用，不暂存或提交。`discard --write` 删除已无活动任务的自有 worktree，应在变更已接收或明确放弃后执行。准备步骤只运行一次；断言失败可以在 `max_attempts` 内续用对应 CLI 原会话修复，认证、额度、权限、超时和范围错误直接停止。
 
-Windows 迁移及已有安装升级见 [安装说明](docs/INSTALL.md)。v0.4 的完整执行 adapter 首先支持 Claude；Codex、OpenCode、ACP 保留已有只读功能。用量统计、反馈精简和 token 节省对照评估留待后续阶段；执行结果中的现有 usage 只代表最后一次 provider 调用。
+Windows 迁移及已有安装升级见 [安装说明](docs/INSTALL.md)。v0.4.1 已扩展到全部五种 adapter，并保留原有只读模式。用量统计、反馈精简和 token 节省对照评估留待后续阶段；执行结果中的现有 usage 只代表最后一次 provider 调用。
 
 ## 提交与恢复任务
 
@@ -129,7 +150,7 @@ aw cancel TASK_ID
 
 ## 权限、数据与验证范围
 
-项目角色限制按祖先目录逐层收紧，子目录不能扩大权限。请求文件不能覆盖 executable、认证或权限参数。只读辅助任务交付分析与建议。executor 使用限定的文件工具，AW 运行请求声明的准备/验证命令；不会给模型任意终端权限或递归委派。命令以当前用户权限执行，worktree 不提供操作系统或网络沙箱。
+项目角色限制按祖先目录逐层收紧，子目录不能扩大权限。请求文件不能覆盖 executable、认证或权限参数。只读辅助任务交付分析与建议。executor 默认使用受限权限，AW 运行请求声明的准备/验证命令；可显式选择完整权限以开放 CLI 的文件、命令和网络能力。角色仍作为叶子任务运行。完整权限下命令以当前用户权限执行，worktree 不提供操作系统或网络沙箱，`write_paths` 仅约束可接收的交付差异，不能阻止工作区外的副作用。
 
 各 adapter 的 CLI 工具限制不等于统一的操作系统沙箱。目录探测、协议测试和格式正确的结果不能证明所有后端的真实权限行为或回答质量。登录、额度、管理员策略及模型可用性需在目标环境中核对。
 

@@ -1,9 +1,14 @@
 import path from 'node:path';
 import {command,environment,events,baseObservation,errorCode,parseObject,jsonObjects,permissionShape} from './common.mjs';
+import {requireValue} from '../core.mjs';
 const policy={'*':'deny',read:'allow',glob:'allow',grep:'allow',list:'allow',external_directory:'deny'};
-function env(provider,root) {
+function env(provider,root,snapshot) {
+  const writing=snapshot?.role.access==='workspace-write',full=snapshot?.role.permissions==='full-access',name=writing?'aw-executor':'aw-readonly';
+  const edit={'*':'deny'};
+  if(writing)for(const p of snapshot.execution.write_paths)for(const prefix of [p,path.resolve(snapshot.cwd,p).replaceAll('\\','/')]){edit[prefix]='allow';edit[`${prefix}/*`]='allow';}
+  const permissions=full?{'*':'allow',task:'deny',question:'deny',skill:'deny'}:writing?{...policy,edit}:policy;
   return {...environment(provider),XDG_CONFIG_HOME:path.join(root,'opencode-config'),OPENCODE_PURE:'1',OPENCODE_DISABLE_PROJECT_CONFIG:'1',OPENCODE_DISABLE_AUTOUPDATE:'1',OPENCODE_DISABLE_EXTERNAL_SKILLS:'1',OPENCODE_DISABLE_CLAUDE_CODE:'1',OPENCODE_DISABLE_LSP_DOWNLOAD:'1',OPENCODE_AUTO_SHARE:'false',
-    OPENCODE_CONFIG_CONTENT:JSON.stringify({share:'disabled',plugin:[],mcp:{},permission:policy,agent:{'aw-readonly':{mode:'primary',description:'Read-only delegated task',permission:policy}}})};
+    OPENCODE_CONFIG_CONTENT:JSON.stringify({share:'disabled',plugin:[],mcp:{},permission:permissions,agent:{[name]:{mode:'primary',description:writing?'Bounded implementation task':'Read-only delegated task',permission:permissions}}})};
 }
 export const opencode={
   id:'opencode',defaultExecutable:'opencode',
@@ -18,14 +23,16 @@ export const opencode={
       models=jsonObjects(stdout).map(({prefix,value})=>({id:prefix,efforts:Object.keys(value.variants??{}),source:'cli_catalog',verified:true})).filter(m=>m.id?.includes('/'));
       if(!models.length)catalog_error='No structured models were returned';
     }catch(e){catalog_error=e.message;}
-    return {available:ready,version:version.trim(),capabilities:{read_only:ready,resume:ready,structured_output:false,model_catalog:models.length>0,catalog_authoritative:models.length>0},models,catalog_error,guarantee:'OpenCode deny-by-default tool policy; not an OS sandbox'};
+    return {available:ready,version:version.trim(),capabilities:{read_only:ready,workspace_write:ready,full_access:ready,resume:ready,structured_output:false,model_catalog:models.length>0,catalog_authoritative:models.length>0},models,catalog_error,guarantee:'OpenCode deny-by-default tool policy; not an OS sandbox',execution_guarantee:'OpenCode scoped edit permissions; no terminal or external directory tools. AW verification runs as the OS user; not an OS sandbox.',full_access_guarantee:'OpenCode native tools and commands allowed, except task/question/skill. Host and network access are unrestricted; not an OS sandbox.'};
   },
   prepare(snapshot,files,sessionId) {
-    permissionShape(snapshot.role.access);
-    const args=[...(snapshot.provider.args??[]),'run','--pure','--format','json','--agent','aw-readonly','--model',snapshot.model];
+    const writing=snapshot.role.access==='workspace-write';
+    if(!writing)permissionShape(snapshot.role.access);
+    requireValue(snapshot.role.permissions!=='full-access'||writing,'permission_unsupported','Full access requires workspace-write');
+    const args=[...(snapshot.provider.args??[]),'run','--pure','--format','json','--agent',writing?'aw-executor':'aw-readonly','--model',snapshot.model];
     if(snapshot.effort!==null)args.push('--variant',snapshot.effort);
     if(sessionId)args.push('--session',sessionId);
-    return {command:snapshot.provider.executable,args,env:env(snapshot.provider,files.directory),stdin_file:files.prompt};
+    return {command:snapshot.provider.executable,args,env:env(snapshot.provider,files.directory,snapshot),stdin_file:files.prompt};
   },
   async observe(file) {
     const o=baseObservation();let text='';

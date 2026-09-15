@@ -13,6 +13,7 @@ test('local UI HTTP contract: guarded access, preview/save, CLI conflict and mod
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'aw-ui-')),file=path.join(dir,'host.json');
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const config=readJson(path.join(TOOL_ROOT,'config/home.example.json'));config.catalog=path.join(TOOL_ROOT,'config/roles.json');config.state_dir=path.join(dir,'state');
+  config.providers['codex-local'].models={'gpt-6-astra':['low','medium','high','xhigh']};
   config.providers['claude-local'].executable=path.join(dir,'uninstalled-claude');atomicJson(file,config);
   const ui=await startUi({hostConfig:file,cwd:dir});t.after(()=>ui.close());
   assert.equal(ui.server.address().address,'127.0.0.1');
@@ -43,5 +44,16 @@ test('local UI HTTP contract: guarded access, preview/save, CLI conflict and mod
   ]);
   assert.deepEqual(concurrent.map(response=>response.status).sort(),[200,409]);
   const models=await (await call('/api/models?provider=claude-local')).json();assert.equal(models.available,false);assert.equal(models.error,'missing_executable');assert.ok(models.models.length>0);
+  const current=await (await call('/api/config')).json();
+  const execution={revision:current.revision,changes:[{role:'executor',allow_model:true,patch:{provider:'codex-local',model:'custom-fast-model',effort:'low',enabled:true,access:'workspace-write',permissions:'full-access'}}]};
+  const preview=await (await call('/api/preview',{body:execution})).json();assert.ok(preview.changes.some(c=>c.field==='models'));
+  assert.equal((await call('/api/config',{body:execution})).status,200);
+  assert.deepEqual(readJson(file).providers['codex-local'].models['custom-fast-model'],['low']);
+  assert.equal(readJson(file).bindings.executor.permissions,'full-access');
+  const configure=spawn(process.execPath,[path.join(TOOL_ROOT,'bin/aw.mjs'),'configure','--host-config',file,'--role','executor','--model','another-fast-model','--effort','max','--allow-model','--access','workspace-write','--permissions','restricted','--write'],{stdio:['ignore','pipe','pipe']});
+  let errors='';configure.stdout.resume();configure.stderr.on('data',data=>errors+=data);
+  assert.equal(await new Promise((resolve,reject)=>{configure.once('error',reject);configure.once('close',resolve);}),0,errors);
+  assert.deepEqual(readJson(file).providers['codex-local'].models['another-fast-model'],['max']);
+  assert.equal(readJson(file).bindings.executor.permissions,'restricted');
   assert.equal((await call('/api/run',{body:{}})).status,404);
 });

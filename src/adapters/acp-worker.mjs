@@ -3,15 +3,17 @@ import path from 'node:path';
 import {connect,select,optionsFor} from './acp-client.mjs';
 import {readJson,requireValue,within} from '../core.mjs';
 import {baseObservation,parseObject,errorCode} from './common.mjs';
+import {classifyCall} from './acp-permissions.mjs';
 const o=baseObservation();let client,text='',collect=false;const calls=new Map();
 const emit=()=>console.log(JSON.stringify({type:'aw_acp',observation:o}));
 try {
   const config=readJson(process.argv[2]),prompt=fs.readFileSync(0,'utf8');
-  client=await connect(config.provider,config.cwd,{onRead:file=>o.reads.push(file),onDenied:()=>{o.error='permission_blocked';},onUpdate:params=>{
+  client=await connect(config.provider,config.cwd,{access:config.access,permissions:config.permissions,write_paths:config.write_paths,onRead:file=>o.reads.push(file),onDenied:()=>{o.error='permission_blocked';},onUpdate:params=>{
     if(!collect)return;const u=params?.update;
     if(u?.sessionUpdate==='agent_message_chunk'&&u.content?.type==='text')text+=u.content.text;
     if(u?.sessionUpdate==='tool_call'||u?.sessionUpdate==='tool_call_update') {
-      const call={...calls.get(u.toolCallId),...u};calls.set(u.toolCallId,call);
+      const call=classifyCall({...calls.get(u.toolCallId),...u},config.provider.adapter,config.cwd);calls.set(u.toolCallId,call);
+      if(call.kind==='execute'&&call.status==='completed')o.executed_commands=(o.executed_commands??0)+1;
       if(call.kind==='read'&&call.status==='completed')for(const loc of call.locations??[]) {
         const file=path.resolve(config.cwd,loc.path);if(within(config.cwd,file)&&!o.reads.includes(file))o.reads.push(file);
       }

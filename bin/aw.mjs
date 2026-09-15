@@ -12,17 +12,17 @@ const HELP=`aw init --output FILE [--preset home|office]
 aw ui [--port PORT] [--host-config FILE]  Local browser editor; loopback only
 aw providers [--refresh] | models PROVIDER [--refresh]
 aw roles | prepare|resolve --role ID|--workflow NAME --cwd PATH
-aw configure --role ID --provider ID --model ID --effort LEVEL|--no-effort [--execution host|worker] [--write]
+aw configure --role ID --provider ID --model ID --effort LEVEL|--no-effort [--execution host|worker] [--access read-only|workspace-write] [--permissions restricted|full-access] [--allow-model] [--write]
 aw run --role ID|--workflow NAME --cwd PATH --request-file FILE --request-id ID
 aw status|recover|cancel TASK | wait TASK --timeout 45 | result TASK [--cursor 0]
 aw followup TASK --request-file FILE --request-id ID
 aw workspace TASK | apply TASK [--write] | discard TASK [--write]
 Global: --host-config FILE. JSON output. No implicit installation, fallback, or task submission.`;
 try {
-  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','port'];
-  const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'}}});
+  const stringOptions=['host-config','role','workflow','cwd','request-file','request-id','model','effort','timeout','cursor','output','preset','provider','execution','access','permissions','port'];
+  const {values:v,positionals:p}=parseArgs({allowPositionals:true,options:{...Object.fromEntries(stringOptions.map(k=>[k,{type:'string'}])),help:{type:'boolean'},refresh:{type:'boolean'},write:{type:'boolean'},'no-effort':{type:'boolean'},'allow-model':{type:'boolean'}}});
   const command=p[0];if(v.help||command==='help'||!command){console.log(HELP);process.exit(0);}
-  const allowed={ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh'],configure:['role','provider','model','effort','no-effort','execution','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
+  const allowed={ui:['port'],init:['output','preset'],providers:['cwd','refresh'],models:['cwd','refresh'],roles:[],resolve:['role','workflow','cwd','model','effort','no-effort','refresh'],prepare:['role','workflow','cwd','model','effort','no-effort','refresh'],configure:['role','provider','model','effort','no-effort','execution','access','permissions','allow-model','write'],run:['role','workflow','cwd','model','effort','no-effort','request-file','request-id'],status:[],recover:[],wait:['timeout'],result:['cursor'],followup:['request-file','request-id'],cancel:[],workspace:[],apply:['write'],discard:['write']};
   requireValue(Object.hasOwn(allowed,command),'invalid_command',HELP);
   const positional=['models','status','recover','wait','result','followup','cancel','workspace','apply','discard'].includes(command);
   requireValue(p.length===(positional?2:1),'invalid_input',positional?'Exactly one provider/task ID required':'Unexpected positional arguments');
@@ -64,10 +64,10 @@ try {
   if(command==='configure') {
     requireValue(v.role&&h.roles[v.role],'invalid_input','Valid --role is required');
     const patch={enabled:true};
-    for(const key of ['provider','model','effort','execution'])if(v[key]!==undefined)patch[key]=v[key];
+    for(const key of ['provider','model','effort','execution','access','permissions'])if(v[key]!==undefined)patch[key]=v[key];
     if(v['no-effort'])patch.effort=null;
-    const edited=await editBindings(h.hostFile,{changes:[{role:v.role,patch}],write:!!v.write});
-    output={written:edited.written,host_config:h.hostFile,binding:edited.configuration.bindings[v.role],configuration:!v.write?edited.configuration:undefined};
+    const edited=await editBindings(h.hostFile,{changes:[{role:v.role,patch,allow_model:!!v['allow-model']}],write:!!v.write});
+    output={written:edited.written,host_config:h.hostFile,binding:edited.configuration.bindings[v.role],changes:edited.changes,configuration:!v.write?edited.configuration:undefined};
   }
   if(command==='run'||command==='followup') {
     requireValue(v['request-file']&&v['request-id'],'invalid_input','request-file and request-id required');

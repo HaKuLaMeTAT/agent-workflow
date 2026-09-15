@@ -8,14 +8,6 @@
       "executable": "codex",
       "args": [],
       "auth": "cli-managed",
-      "models": {
-        "gpt-6-astra": [
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ]
-      },
       "inherit_env": []
     },
     "claude-local": {

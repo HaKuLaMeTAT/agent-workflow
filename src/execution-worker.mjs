@@ -59,7 +59,10 @@ export async function execute(plan) {
       const files={directory:dir,prompt:path.join(dir,'prompt.txt'),schema:path.join(dir,'result-schema.json')};
       fs.writeFileSync(files.prompt,prepareRequest(snapshot,request).prompt,{mode:0o600});atomicJson(files.schema,resultSchema(snapshot.role.result_contract));
       const command={...adapter.prepare(snapshot,files,session),cwd:workspace.cwd};
-      const provider=await runLogged(command,dir,{onEvent:e=>{if(e.type==='system'&&e.subtype==='init'&&e.session_id)emit({type:'aw_session',session_id:e.session_id});}});
+      const provider=await runLogged(command,dir,{onEvent:e=>{
+        const id=e.type==='system'&&e.subtype==='init'?e.session_id:e.type==='thread.started'?e.thread_id:e.type==='aw_acp'?e.observation?.session_id:e.sessionID;
+        if(id)emit({type:'aw_session',session_id:id});
+      }});
       const attempt={number:index+1,provider,verification:[]};attempts.push(attempt);persist({});
       observed=await adapter.observe(provider.stdout_path);
       requireValue(!session||observed.session_id===session,'session_mismatch','Execution continuation did not preserve its native session');

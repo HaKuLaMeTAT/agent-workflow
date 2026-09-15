@@ -14,11 +14,18 @@ import {applyUpstreamPatch} from '../scripts/patch-upstream.mjs';
 const upstream=process.env.AW_TEST_UPSTREAM;
 const options={skip:!upstream?'Set AW_TEST_UPSTREAM for execution integration':false};
 
-function fixture(t) {
+function fixture(t,adapter='claude',permissions='restricted') {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'aw execute 中文 & space-')),project=path.join(root,'project');fs.mkdirSync(project);
   const runtime=path.join(root,'runtime');runtimeFixture(upstream,runtime);applyUpstreamPatch(runtime);
   const host=readJson(path.join(TOOL_ROOT,'config/home.example.json'));host.catalog=path.join(TOOL_ROOT,'config/roles.json');host.state_dir=path.join(root,'state');host.upstream_dir=runtime;
-  host.providers['claude-local'].executable=providerFixture(root);host.bindings.executor.enabled=true;
+  const executable=providerFixture(root),model=adapter==='claude'?'claude-sonnet-5':adapter==='codex'?'gpt-5.6-luna':'fixture/model';
+  host.providers.worker={adapter,executable,args:['acp','dsh'].includes(adapter)?['--fixture-acp',...(adapter==='dsh'?['--fixture-dsh']:[])]:[],auth:'cli-managed',models:{[model]:['high']}};
+  host.bindings.executor={enabled:true,provider:'worker',model,effort:'high',permissions};
+  if(adapter==='dsh') {
+    const previous=process.env.DSH_HOME;process.env.DSH_HOME=path.join(root,'dsh');
+    const profile=path.join(process.env.DSH_HOME,'profiles/acp');fs.mkdirSync(profile,{recursive:true});atomicJson(path.join(profile,'package.json'),{});
+    t.after(()=>{if(previous===undefined)delete process.env.DSH_HOME;else process.env.DSH_HOME=previous;});
+  }
   const hostFile=path.join(root,'host.json');atomicJson(hostFile,host);const h=loadHost(hostFile);
   git(project,['init']);git(project,['config','user.name','AW fixture']);git(project,['config','user.email','aw-test@example.invalid']);
   fs.mkdirSync(path.join(project,'src'));
@@ -55,6 +62,9 @@ test('execution: read/edit/test/fix in one native session; receive, apply and di
   assert.equal(fs.readFileSync(path.join(project,'src/math.mjs'),'utf8'),before);
   const prompt=fs.readFileSync(path.join(h.state_dir,'tasks',task.task_id,'attempt-1','prompt.txt'),'utf8');assert.match(prompt,/Preserve the sum API/);
   const follow=request('execute-good');delete follow.execution;follow.read_paths=['src/new.bin'];
+  h.bindings.executor.permissions='full-access';
+  await assert.rejects(submit(h,{parentId:task.task_id,raw:follow,requestId:'permission-change'}),{code:'permissions_changed'});
+  h.bindings.executor.permissions='restricted';
   const next=await submit(h,{parentId:task.task_id,raw:follow,requestId:'follow'});
   assert.equal((await wait(h,next.task_id,30)).state,'completed');
   assert.equal(readTask(h,next.task_id).session_id,readTask(h,task.task_id).session_id);
@@ -123,4 +133,30 @@ test('execution request: scope/rule escapes rejected and read-only adapters stay
   const previousPath=process.env.PATH;process.env.PATH='';
   try {assert.equal(prepareRequest(snapshot,{...request,execution:{...request.execution,verification:[{command:'node',args:['test.mjs']}]}}).request.execution.verification[0].command,process.execPath);}
   finally {if(previousPath===undefined)delete process.env.PATH;else process.env.PATH=previousPath;}
+});
+
+for(const adapter of ['claude','codex','opencode','acp','dsh'])for(const permissions of (adapter==='claude'?['full-access']:['restricted','full-access']))test(`execution ${adapter}/${permissions}: native resume, verification and apply`,options,async t=>{
+  const {project,h,request,run}=fixture(t,adapter,permissions),task=await run(request(),'multi');
+  const terminal=await wait(h,task.task_id,45);assert.equal(terminal.state,'completed',JSON.stringify(terminal));
+  const output=await result(h,task.task_id),report=output.execution;
+  assert.equal(report.outcome,'verified');assert.equal(report.attempts.length,2);
+  assert.equal(report.attempts[0].verification[0].exit_code,1);assert.equal(report.attempts[1].verification[0].exit_code,0);
+  assert.ok(readTask(h,task.task_id).session_id);
+  assert.equal(fs.readFileSync(path.join(project,'src/math.mjs'),'utf8'),'export const add = () => 0;\n');
+  await workspaceAction(h,task.task_id,'apply',{write:true});
+  assert.match(execFileSync(process.execPath,['verify.mjs'],{cwd:project,encoding:'utf8'}),/sum verified/);
+  await workspaceAction(h,task.task_id,'discard',{write:true});
+});
+
+test('Codex model selection: explicit models outside the cache can run without a host allowlist',options,async t=>{
+  const {h,project,request,run}=fixture(t,'codex');delete h.providers.worker.models;
+  for(const [model,effort] of [['custom-codex-fast','low'],['another-codex-model',null]]) {
+    h.bindings.executor.model=model;h.bindings.executor.effort=effort;
+    const selected=await prepareRole(h,resolveRole(h,'executor',project));
+    assert.equal(selected.runnable,true,selected.unavailable_reason);assert.equal(selected.model,model);assert.equal(selected.effort,effort);
+    assert.equal(selected.discovery.models[0].source,'explicit_binding');assert.equal(selected.discovery.models[0].verified,false);
+  }
+  const task=await run(request('execute-good'),'custom-model');assert.equal((await wait(h,task.task_id,30)).state,'completed');
+  assert.equal(readTask(h,task.task_id).snapshot.model,'another-codex-model');
+  await workspaceAction(h,task.task_id,'discard',{write:true});
 });

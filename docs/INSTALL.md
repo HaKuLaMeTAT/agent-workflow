@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.4）
+# 安装与本机配置（v0.4.1）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -31,7 +31,7 @@ node bin/aw.mjs roles --host-config config/home.local.json
 node bin/aw.mjs ui --host-config config/home.local.json
 ```
 
-`home` 提供 Codex / Claude 示例；`office` 提供 OpenCode / ACP 示例，角色初始禁用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，需按本机 CLI 目录确认。
+`home` 提供 Codex / Claude 示例；`office` 提供 OpenCode / ACP / Codex 示例，角色初始禁用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，需按本机 CLI 目录确认。
 
 UI 可修改已有角色的绑定。也可先读取目录，再预览、保存：
 
@@ -40,7 +40,7 @@ node bin/aw.mjs models claude-local --host-config config/home.local.json --refre
 node bin/aw.mjs configure --host-config config/home.local.json --role reviewer --provider claude-local --model claude-sonnet-5 --effort high --execution worker
 ```
 
-核对预览后，在同一命令末尾加 `--write`。新增 provider、修改模型允许列表仍通过 JSON 文件维护。Windows JSON 路径可写 `D:/Tools/cli.cmd`，或将反斜杠写成 `D:\\Tools\\cli.cmd`。DSH 的 ACP profile 需提前在对应 CLI 中初始化。
+核对预览后，在同一命令末尾加 `--write`。新增 provider 通过 JSON 文件维护；模型和档位允许列表可通过 `configure --allow-model` 或 UI 勾选显式扩充。Windows JSON 路径可写 `D:/Tools/cli.cmd`，或将反斜杠写成 `D:\\Tools\\cli.cmd`。DSH 的 ACP profile 需提前在对应 CLI 中初始化。
 
 ## 3. 登记用户入口，让 Codex 自动识别
 
@@ -89,20 +89,20 @@ v0.3 仓库移动后，在新位置重新运行 `node scripts/install-local.mjs 
 
 移动 v0.2 仓库时，建议先在原位置升级至 v0.3，再移动并重新登记。
 
-## v0.4：Windows 执行任务迁移
+## v0.4.1：Windows 执行任务迁移
 
-原生 Windows 的完整执行路径需要 Git for Windows 和已登录的 Claude CLI，并能从启动 AW 的环境定位 Git。`home` 模板包含初始禁用的 executor；`office` 模板仍保留 OpenCode/ACP，使用 executor 时需在本机配置中另加 Claude provider（可参考 home 模板）。现阶段 OpenCode/ACP 不承担可写执行。
+原生 Windows 的完整执行路径需要 Git for Windows 和已安装、登录的目标 CLI，并能从启动 AW 的环境定位 Git。executor 支持 Claude、Codex、OpenCode、DSH / ACP。`home` 和 `office` 模板都含 Codex provider，executor 初始禁用；按自己的账户与模型目录启用。
 
 在 Windows 上重新生成本机配置和登记 Skill，不直接复制 WSL 的 host.json；其中 Linux 的 executable、catalog、state_dir 等绝对路径不适用于 Windows。迁移源码和项目文件，登录目标 CLI 后按本机目录绑定角色。已有 Windows v0.3 安装则使用上一节的 `--update` 保留本机配置。
 
 ```powershell
-Get-Command node, git, claude
-node bin/aw.mjs models claude-local --host-config config/home.local.json --refresh
-node bin/aw.mjs configure --host-config config/home.local.json --role executor --provider claude-local --model claude-sonnet-5 --effort high --write
+Get-Command node, git, codex
+node bin/aw.mjs models codex-local --host-config config/home.local.json --refresh
+node bin/aw.mjs configure --host-config config/home.local.json --role executor --provider codex-local --model gpt-5.6-luna --effort low --access workspace-write --permissions restricted --allow-model --write
 node scripts/install-local.mjs --apply config/home.local.json
 ```
 
-如已登记安装，使用 `aw configure` 修改已安装 host，不用另一份旧源配置覆盖它。模型和档位以本机目录为准；示例命令不是所有账户的模型可用性保证。
+如已登记安装，使用 `aw configure` 修改已安装 host，不用另一份旧源配置覆盖它。Codex 的模型支持目录选择和手动输入，默认模板不设置固定的模型允许列表；Luna 只是示例。旧 host 若有 `providers[ID].models`，可显式扩充或删除该字段。模型和档位以本机目录及实际调用为准，示例命令不是所有账户的模型可用性保证。
 
 执行请求见 [交接与命令格式](../skills/agent-workflow/references/execution.md)。源项目需为干净且已有提交的 Git 仓库；不含 tracked symlink/submodule。请求放在项目外或忽略目录；AW state_dir 放在目标仓库外。所有请求内的相对路径使用 `/`，支持空格和中文目录。
 
@@ -119,7 +119,19 @@ node scripts/install-local.mjs --apply config/home.local.json
 
 仅在项目适用时使用此命令。worktree 不复制源目录中忽略的 node_modules；`setup` 需按真实项目定义，之后再运行 `verification`。总任务 timeout_seconds 应覆盖准备、修改、验证及修复。准备或验证不得更改交付源码。Git 应用补丁时遵循项目换行策略，包括 Windows 的 CRLF 转换。
 
-Claude 使用 `--restricted`、`dontAsk`、限定 Read/Glob/Grep/Edit/Write 与显式写入路径规则；权限提示无人应答时拒绝。AW 运行任务指定的命令，它们具有当前用户权限。此执行模式不依赖 Claude 原生 Windows 尚未提供的 OS 沙箱，也不声称提供 OS/网络隔离。CLI 管理员策略仍可能限制编辑；以 `prepare` 和真实验收结果为准。[Claude CLI 参数说明](https://code.claude.com/docs/en/cli-reference)、[权限规则](https://code.claude.com/docs/en/permissions)。
+默认 `permissions: restricted`：Claude / OpenCode / ACP 使用文件权限限制；Codex 使用原生 workspace-write 沙箱，网络关闭。AW 的 setup / verification 在 CLI 沙箱外以当前用户权限执行。Codex 沙箱须在本机可用；失败时 AW 返回诊断，不会自动改为完整权限。
+
+需要 worker 自行运行命令时，显式配置完整权限：
+
+```text
+aw configure --role executor --permissions full-access --write
+```
+
+UI 中对应“写入能力：可修改文件”和“权限策略：完整权限”。这会开放原生命令、文件及网络访问，worktree 不提供系统隔离；`write_paths` 约束交付差异，无法撤销工作区外的命令副作用。顾问/审查角色不能用这个选项扩大写入权限。基础、主力、攻坚开发角色可以显式设置 `--execution worker --access workspace-write`。
+
+OpenCode 可用 `opencode-go` provider；DSH 使用预先初始化的 ACP profile，支持 `DSH_HOME` 和 `--profile NAME`，不会由探测自动安装。DSH 模型 ID 可能是形如 `["deepseek-official","deepseek-v4-flash"]` 的 JSON 字符串，请从 `models dsh-local` 输出复制，或在 UI 中选择，避免 PowerShell 多层引号传输出错。
+
+权限依据：[Codex 配置](https://developers.openai.com/codex/config-reference)、[OpenCode 权限](https://opencode.ai/docs/permissions/)、[ACP 文件协议](https://agentclientprotocol.com/protocol/v1/file-system)、[ACP 终端协议](https://agentclientprotocol.com/protocol/v1/terminals)、[Claude CLI 参数](https://code.claude.com/docs/en/cli-reference)。
 
 可以在启用 executor 后显式运行一次真实模型验收：
 
@@ -127,7 +139,15 @@ Claude 使用 `--restricted`、`dontAsk`、限定 Read/Glob/Grep/Edit/Write 与�
 node scripts/live-execution-smoke.mjs --run
 ```
 
-它在独立临时项目和任务状态目录中验证读文件、修改、测试、应用与清理，最多两次模型编辑调用，会消耗配置模型的额度。它不修改原有 host 配置，保留测试日志和 acceptance.json。
+它在独立临时项目和任务状态目录中验证读文件、修改、测试、应用与清理，最多两次模型编辑调用，会消耗配置模型的额度。它不修改原有 host 配置，保留测试日志和 acceptance.json。也可指定一份临时 host：`node scripts/live-execution-smoke.mjs --run HOST_CONFIG`；启用完整权限后，加 `--native-tools` 会要求 worker 实际调用命令工具，并检查调用事件。
+
+### v0.4.1 验收记录
+
+自动用例共 30 项，Linux/WSL 与原生 Windows 均已覆盖并通过（完整回归后，对最后修改追加定向复测）。覆盖模型自选、允许列表扩充、权限切换、各 adapter 的读写/测试失败续接/应用，以及进程树清理。Windows 使用可控 CLI 协议进程验证 AW 执行链。
+
+真实 CLI 验收在 WSL 完成：Codex `gpt-5.6-luna`、OpenCode `opencode-go/deepseek-v4-flash`、DSH 的 DeepSeek V4 Flash 均通过受限与完整权限模式；Claude Sonnet 5 通过完整权限模式。完整权限验收均观测到原生命令工具调用，并通过 AW 的独立验证、应用和清理。Luna 只是其中一个验收模型；另有缓存外任意模型 ID 的可控 CLI 回归，AW 不内置固定的 Codex 模型列表。
+
+这不等于已验证每个 CLI 在原生 Windows 上的真实账户调用，也不证明复杂任务质量或 token 节省。迁移到目标 Windows 后，按上面的 `prepare` 与可选真实模型验收检查当地环境。
 
 ## 接入项目与核验
 
@@ -164,7 +184,7 @@ $env:AW_TEST_UPSTREAM = (Resolve-Path '.runtime/pristine/node_modules/ai-cli-mcp
 npm test
 ```
 
-这些测试隔离外部模型调用，使用可控协议 CLI 验证安装、含空格/中文路径、目录迁移、四种 adapter、会话续接、取消、超时、并发锁与 UI 保存冲突。可选真实模型验收会使用对应模型额度：
+这些测试隔离外部模型调用，使用可控协议 CLI 验证安装、含空格/中文路径、目录迁移、五种 adapter、会话续接、取消、超时、并发锁与 UI 保存冲突。可选真实模型验收会使用对应模型额度：
 
 ```text
 node scripts/live-smoke.mjs --run reviewer

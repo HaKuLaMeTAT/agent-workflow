@@ -1,11 +1,15 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import {spawnCli as spawn,stopChild} from '../process.mjs';
 import {createInterface} from 'node:readline';
-import {AwError,requireValue,within,real,readText} from '../core.mjs';
+import {AwError,requireValue,readText} from '../core.mjs';
 import {environment} from './common.mjs';
+import {filePolicy,classifyCall} from './acp-permissions.mjs';
+import {terminals} from './acp-terminals.mjs';
 
 // Small ACP JSON-RPC transport; no daemon and no SDK dependency.
-export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDenied=()=>{},timeout=15000}={}) {
+export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDenied=()=>{},timeout=15000,...permissions}={}) {
+  const policy=filePolicy(cwd,permissions),calls=new Map(),terminal=terminals(provider,cwd);
   const child=spawn(provider.executable,provider.args??[],{cwd,env:environment(provider),stdio:['pipe','pipe','pipe']});
   child.stdin.on('error',()=>{});child.stderr.resume();const pending=new Map();let next=0,bytes=0;
   const closed=new Promise(resolve=>child.once('close',resolve));
@@ -13,23 +17,33 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
   child.on('error',()=>failAll(new AwError('acp_transport','ACP process could not start')));
   child.on('close',()=>failAll(new AwError('acp_transport','ACP process closed')));
   const write=message=>child.stdin.write(JSON.stringify({jsonrpc:'2.0',...message})+'\n');
-  function safeFile(value) {requireValue(typeof value==='string','permission_blocked','No file path');const file=real(path.resolve(cwd,value));requireValue(within(cwd,file),'permission_blocked','File is outside workspace');return file;}
   const lines=createInterface({input:child.stdout});
-  lines.on('line',line=>{
+  lines.on('line',async line=>{
     bytes+=line.length;if(bytes>16*1024*1024||line.length>2*1024*1024){failAll(new AwError('output_too_large','ACP output limit exceeded'));stopChild(child);return;}
     let message;try{message=JSON.parse(line);}catch{return;}
     if(message.method) {
-      if(message.id===undefined){if(message.method==='session/update')onUpdate(message.params);return;}
+      if(message.id===undefined){if(message.method==='session/update'){
+        const p=message.params,u=p?.update,key=`${p?.sessionId}:${u?.toolCallId}`;
+        if(['tool_call','tool_call_update'].includes(u?.sessionUpdate))calls.set(key,{...calls.get(key),...u});
+        onUpdate(p);
+      }return;}
       let result;
       try {
         if(message.method==='session/request_permission') {
-          const call=message.params.toolCall,locations=call.locations??[];
-          const readable=['read','search'].includes(call.kind)&&locations.length>0&&locations.every(x=>{try{safeFile(x.path);return true;}catch{return false;}});
-          const option=message.params.options?.find(x=>x.kind===(readable?'allow_once':'reject_once'));
-          if(!readable)onDenied(call);
+          const p=message.params,partial=p.toolCall,call=classifyCall({...calls.get(`${p.sessionId}:${partial.toolCallId}`),...partial},provider.adapter,cwd);
+          const allowed=policy.allows(call),option=p.options?.find(x=>x.kind===(allowed?'allow_once':'reject_once'));
+          if(!allowed)onDenied(call);
           result={outcome:option?{outcome:'selected',optionId:option.optionId}:{outcome:'cancelled'}};
         } else if(message.method==='fs/read_text_file') {
-          const file=safeFile(message.params.path),content=readText(file,1024*1024);onRead(file);result={content};
+          const p=message.params,file=policy.file(p.path),content=readText(file,1024*1024);onRead(file);
+          requireValue((p.line===undefined||Number.isInteger(p.line)&&p.line>=1)&&(p.limit===undefined||Number.isInteger(p.limit)&&p.limit>=0),'permission_blocked','Invalid line range');
+          result={content:p.line===undefined&&p.limit===undefined?content:content.split('\n').slice((p.line??1)-1,p.limit===undefined?undefined:(p.line??1)-1+p.limit).join('\n')};
+        } else if(message.method==='fs/write_text_file') {
+          const p=message.params,file=policy.file(p.path,{write:true});
+          requireValue(typeof p.content==='string'&&Buffer.byteLength(p.content)<=1024*1024,'permission_blocked','Invalid or oversized file content');
+          fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,p.content);result=null;
+        } else if(message.method.startsWith('terminal/')&&policy.full) {
+          result=await terminal.handle(message.method,message.params);
         } else throw new AwError('permission_blocked','Client method is not allowed');
         write({id:message.id,result});
       }catch{onDenied({kind:message.method});write({id:message.id,error:{code:-32601,message:'Client capability denied'}});}
@@ -44,10 +58,11 @@ export async function connect(provider,cwd,{onUpdate=()=>{},onRead=()=>{},onDeni
   });
   const close=async()=>{
     failAll(new AwError('acp_closed','ACP client closed'));lines.close();child.stdin.end();stopChild(child);
+    await terminal.close();
     const timer=setTimeout(()=>stopChild(child,'SIGKILL'),1000);await closed;clearTimeout(timer);
   };
   try {
-    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:false},terminal:false},clientInfo:{name:'agent-workflow',version:'0.3.0'}});
+    const initialized=await request('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:true,writeTextFile:policy.writing},terminal:policy.full},clientInfo:{name:'agent-workflow',version:'0.4.1'}});
     requireValue(initialized.protocolVersion===1,'unsupported_protocol','ACP protocol version is unsupported');
     return {request,close,initialized};
   }catch(e){await close();throw e;}

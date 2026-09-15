@@ -36,8 +36,11 @@
               <div class="field full"><label for="provider">使用的 CLI <span>PROVIDER</span></label><select id="provider" name="provider" required></select></div>
               <div class="model-row"><label for="model">模型 <span>MODEL</span></label><button id="refresh-models" class="text-button" type="button">↻ 读取模型目录</button></div>
               <div class="field full"><input id="model" name="model" list="model-options" autocomplete="off" spellcheck="false" placeholder="选择或输入模型 ID"><datalist id="model-options"></datalist><p id="model-help" class="field-help"></p></div>
+              <label class="enable-row full" for="allow-model"><span><strong>将所选模型与档位加入允许列表</strong><small>同时更新此 CLI 的允许列表；实际可用性在启动任务时验证。</small></span><input id="allow-model" type="checkbox"></label>
               <div class="field"><label for="effort">推理档位 <span>EFFORT</span></label><input id="effort" name="effort" list="effort-options" autocomplete="off" spellcheck="false" placeholder="选择档位，或留空"><datalist id="effort-options"></datalist><p class="field-help">留空表示不指定；模型须支持该选项。</p></div>
               <div class="field"><label for="execution">执行位置 <span>EXECUTION</span></label><select id="execution" name="execution"><option value="worker">独立辅助任务</option><option value="host">当前主对话</option></select><p class="field-help">决定由哪个会话承担这个角色；写入能力由角色权限决定。</p></div>
+              <div class="field"><label for="access">写入能力</label><select id="access"><option value="read-only">只读</option><option value="workspace-write">可修改文件</option></select></div>
+              <div class="field"><label for="permissions">权限策略</label><select id="permissions"><option value="restricted">受限权限（默认）</option><option value="full-access">完整权限：文件、命令与网络</option></select></div>
               <div class="execution-note full"><span aria-hidden="true">↳</span><p id="execution-note"></p></div>
               <label class="enable-row full" for="enabled"><span><strong>启用这个角色</strong><small>关闭后，新任务不能调用此角色。</small></span><input id="enabled" name="enabled" type="checkbox" role="switch"></label>
             </fieldset>
@@ -55,7 +58,7 @@
     <div class="page-footer"><span>AGENT WORKFLOW / CONTROL DESK</span><span>本地管理 · 按需运行</span></div>
   </div>
   <dialog id="preview-dialog" aria-labelledby="preview-title">
-    <div class="dialog-heading"><p class="eyebrow">REVIEW CHANGES</p><h2 id="preview-title">确认本次调整</h2><p>只修改以下绑定，保存后供新任务读取。</p></div>
+    <div class="dialog-heading"><p class="eyebrow">REVIEW CHANGES</p><h2 id="preview-title">确认本次调整</h2><p>以下绑定和允许列表变更，保存后供新任务读取。</p></div>
     <div id="preview-list" class="preview-list"></div>
     <p id="dialog-error" class="notice" role="alert" hidden></p>
     <div class="dialog-actions"><button id="cancel-preview" class="secondary" type="button">继续编辑</button><button id="save" class="primary" type="button">保存配置</button></div>

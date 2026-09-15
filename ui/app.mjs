@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
-const editable=['provider','model','effort','enabled','execution'];
-const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置'};
+const editable=['provider','model','effort','enabled','execution','access','permissions'];
+const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置',access:'写入能力',permissions:'权限策略',models:'模型允许列表'};
 const fragment=new URLSearchParams(location.hash.slice(1)),linkToken=fragment.get('token');
 let token=linkToken;
 try{if(linkToken)sessionStorage.setItem('aw-ui-token',linkToken);else token=sessionStorage.getItem('aw-ui-token');}catch{/* The complete link still works when browser storage is unavailable. */}
@@ -19,8 +19,8 @@ function errorText(error){return error.name==='TimeoutError'?'本地服务响应
 function handleError(error){if(error.code==='config_conflict'){conflict=true;updateActions();}notice(errorText(error));}
 function currentRole(){return snapshot.roles.find(r=>r.id===selected);}
 function binding(role){return drafts.get(role.id)??role.binding;}
-function changes(){return [...drafts].map(([role,next])=>({role,patch:Object.fromEntries(editable.filter(key=>next[key]!==snapshot.roles.find(r=>r.id===role).binding[key]).map(key=>[key,next[key]]))}));}
-function displayValue(field,value){if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'独立辅助任务';return String(value);}
+function changes(){return [...drafts].map(([role,next])=>({role,allow_model:next.allow_model===true,patch:Object.fromEntries(editable.filter(key=>next[key]!==snapshot.roles.find(r=>r.id===role).binding[key]).map(key=>[key,next[key]]))}));}
+function displayValue(field,value){if(typeof value==='object'&&value!==null)return JSON.stringify(value);if(field==='permissions')return value==='full-access'?'完整权限（主机与网络访问）':'受限权限';if(field==='access')return value==='workspace-write'?'可修改文件':'只读';if(value===null||value==='')return '不指定';if(field==='enabled')return value?'启用':'停用';if(field==='execution')return value==='host'?'当前主对话':'独立辅助任务';return String(value);}
 function renderRoles(){
   $('roles').replaceChildren(...snapshot.roles.map(role=>{
     const b=binding(role),button=element('button',undefined,'role-button');button.type='button';button.dataset.role=role.id;button.setAttribute('aria-current',String(role.id===selected));
@@ -34,21 +34,24 @@ function selectedModels(){
 }
 function renderModelChoices(){
   const {provider,models}=selectedModels();
-  $('model-options').replaceChildren(...models.filter(m=>m.allowed!==false).map(m=>{const option=element('option');option.value=m.id;option.label=m.verified?'CLI 目录':'主机配置';return option;}));
+  $('model-options').replaceChildren(...models.map(m=>{const option=element('option');option.value=m.id;option.label=m.allowed===false?'需加入允许列表':m.verified?'CLI 目录':'主机配置';return option;}));
   renderEfforts();
   const catalog=catalogs.get(provider?.id);
-  const source=provider?.has_allowlist?'保存须符合此主机的模型与档位允许列表。':'可选择目录中的模型；实际可用性会在任务启动时检查。';
+  const source=provider?.has_allowlist?'可手动输入模型与档位；勾选下方选项可将其加入此 CLI 的允许列表。':'可选择目录中的模型；实际可用性会在任务启动时检查。';
   $('model-help').textContent=discovering.has(provider?.id)?'正在读取 CLI 模型目录，不运行分析任务…':catalog?.error?`目录未能确认（${catalog.error}）。${source}`:catalog?`目录已读取；标注来自 CLI 或主机配置，不代表任务验证通过。${source}`:`当前显示主机配置。${source}`;
   $('refresh-models').disabled=busy||!provider||discovering.has(provider.id);
 }
 function renderEfforts(){
   const {provider,models}=selectedModels(),id=$('model').value;
   const configured=provider?.models.find(m=>m.id===id),found=models.find(m=>m.id===id);
-  const efforts=configured?.efforts??found?.efforts??[];
+  const efforts=[...new Set([...(configured?.efforts??[]),...(found?.efforts??[])])];
   $('effort-options').replaceChildren(...efforts.map(e=>{const option=element('option');option.value=e;return option;}));
 }
 function renderExecution(){
-  $('execution-note').textContent=$('execution').value==='host'?'职责由当前主对话承担。实际模型与推理档位仍由 Codex App／CLI 设置，此处保存不会切换当前会话。':currentRole().id==='executor'?'在独立工作区修改文件并运行任务指定的验证，失败时在预算内续接修复。当前支持 Claude CLI；变更由主任务验收后接收。':'新建独立的只读辅助任务，按这里的模型与档位执行，交付分析、方案或审查结果。';
+  const writable=$('access').value==='workspace-write',host=$('execution').value==='host',full=$('permissions').value==='full-access';
+  $('access').options[1].disabled=currentRole().access!=='workspace-write';
+  $('permissions').disabled=!writable;
+  $('execution-note').textContent=host?'职责由当前主对话承担；这里的配置不会切换 Codex App 当前会话。':writable?(full?'完整权限：worker 可读写文件、运行命令并访问主机与网络。独立工作区不提供系统隔离；AW 仍校验交付范围并运行验收命令。':'受限权限：worker 修改指定范围的文件，AW 执行声明的测试并续接修复。Codex 使用原生工作区沙箱；其他 CLI 使用文件工具权限。'):'独立只读任务，交付分析、方案或审查结果。';
 }
 function renderEditor(){
   const role=currentRole(),b=binding(role);
@@ -56,6 +59,7 @@ function renderEditor(){
   $('provider').replaceChildren(element('option','请选择 CLI'),...snapshot.providers.map(p=>{const option=element('option',`${p.id} · ${p.adapter}`);option.value=p.id;return option;}));
   $('provider').options[0].value='';
   for(const key of editable){if(key==='enabled')$(key).checked=b[key];else $(key).value=b[key]??'';}
+  $('allow-model').checked=b.allow_model===true;
   $('role-state').textContent=b.enabled?'已启用':'已停用';$('role-state').classList.toggle('off',!b.enabled);
   $('instructions').textContent=role.instructions;renderModelChoices();renderExecution();updateActions();
 }
@@ -77,13 +81,15 @@ function acceptSnapshot(next){
 }
 function edit(){
   const role=currentRole(),next=Object.fromEntries(editable.map(key=>[key,key==='enabled'?$(key).checked:key==='effort'?($(key).value||null):$(key).value]));
-  if(editable.some(key=>next[key]!==role.binding[key]))drafts.set(role.id,next);else drafts.delete(role.id);
+  next.allow_model=$('allow-model').checked;
+  if(next.allow_model||editable.some(key=>next[key]!==role.binding[key]))drafts.set(role.id,next);else drafts.delete(role.id);
   $('role-state').textContent=next.enabled?'已启用':'已停用';$('role-state').classList.toggle('off',!next.enabled);renderRoles();updateActions();
 }
 for(const key of editable)$(key).addEventListener(key==='model'||key==='effort'?'input':'change',()=>{
   if(key==='provider'){$('model').value='';$('effort').value='';renderModelChoices();}
-  if(key==='model')renderEfforts();if(key==='execution')renderExecution();edit();
+  if(key==='model')renderEfforts();if(key==='access'&&$('access').value==='read-only')$('permissions').value='restricted';renderExecution();edit();
 });
+$('allow-model').addEventListener('change',edit);
 $('binding-form').addEventListener('submit',e=>e.preventDefault());
 $('refresh-models').addEventListener('click',async()=>{
   const provider=$('provider').value,revision=snapshot.revision;discovering.add(provider);renderModelChoices();

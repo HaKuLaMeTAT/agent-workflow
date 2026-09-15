@@ -47,10 +47,13 @@ export function parseHost(hostFile,h) {
   }
   for(const [key,b] of Object.entries(h.bindings)) {
     requireValue(roles[key],'invalid_config',`Unknown role ${key}`);
-    fields(b,['provider','model','effort','enabled','execution','access'],`binding.${key}`);
+    fields(b,['provider','model','effort','enabled','execution','access','permissions'],`binding.${key}`);
     requireValue(typeof b.enabled==='boolean','invalid_config','enabled must be boolean');
     if(b.execution!==undefined)requireValue(['host','worker'].includes(b.execution),'invalid_config','Invalid execution');
     if(b.access!==undefined)requireValue(b.access===roles[key].access||b.access==='read-only','permission_escalation','Binding cannot widen role access');
+    requireValue(['restricted','full-access'].includes(b.permissions??'restricted'),'invalid_config','permissions must be restricted or full-access');
+    const access=b.access??((b.execution??roles[key].execution)==='worker'&&roles[key].execution==='host'?'read-only':roles[key].access);
+    if(b.permissions==='full-access')requireValue(roles[key].result_contract==='implementation'&&access==='workspace-write','permission_escalation','Full access requires an implementation role with workspace-write access');
     if(!b.enabled)continue;
     requireValue(providers[b.provider],'invalid_config',`Unknown provider ${b.provider}`);validateModel(providers[b.provider],b.model,b.effort??null);
   }
@@ -65,7 +68,7 @@ function validateModel(provider,model,effort) {
   text(model,'model');if(effort!==null)text(effort,'effort');
   if(provider.models!==undefined) {
     requireValue(Object.hasOwn(provider.models,model),'unsupported_model',`Model not in host allowlist: ${model}`);
-    requireValue(effort===null?provider.models[model].length===0:provider.models[model].includes(effort),'unsupported_effort',`Unsupported configured effort for ${model}`);
+    requireValue(effort===null||provider.models[model].includes(effort),'unsupported_effort',`Unsupported configured effort for ${model}`);
   }
 }
 export function projectPolicy(h,cwd) {
@@ -106,7 +109,7 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
   requireValue(defaults&&binding?.enabled,'role_unavailable',`Role unavailable on ${h.host_id}: ${roleId}`);
   requireValue(project.allowed_roles.includes(roleId),'role_not_allowed',`Role not allowed by ancestor project policy: ${roleId}`);
   const execution=binding.execution??defaults.execution;
-  const role={...defaults,execution,access:binding.access??(execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access),can_delegate:execution==='worker'?false:defaults.can_delegate};
+  const role={...defaults,execution,access:binding.access??(execution==='worker'&&defaults.execution==='host'?'read-only':defaults.access),permissions:binding.permissions??'restricted',can_delegate:execution==='worker'?false:defaults.can_delegate};
   const provider=h.providers[binding.provider],model=overrides.model??binding.model,effort=Object.hasOwn(overrides,'effort')?overrides.effort:binding.effort??null;
   validateModel(provider,model,effort);
   const binary=executable(provider.executable),runtime=checkRuntime(h.upstream_dir);
@@ -118,7 +121,7 @@ export function resolveRole(h,roleId,cwd,overrides={}) {
     guarantee:'Not probed; configuration is not proof of executable capability'};
 }
 export function publicRole(r,{instructions=false}={}) {
-  return {role:r.role_id,label:r.role.label,execution:r.role.execution,access:r.role.access,provider:r.provider_id,adapter:r.provider.adapter,model:r.model,effort:r.effort,
+  return {role:r.role_id,label:r.role.label,execution:r.role.execution,access:r.role.access,permissions:r.role.permissions,provider:r.provider_id,adapter:r.provider.adapter,model:r.model,effort:r.effort,
     runnable:r.runnable,reason:r.unavailable_reason,guarantee:r.guarantee,config_hash:r.config_hash,cwd:r.cwd,project_root:r.project_root,workflow:r.workflow,
     discovery:r.discovery??null,...(instructions?{instructions:r.role.instructions,project_instructions:r.project_instructions}: {})};
 }
