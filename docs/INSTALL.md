@@ -31,7 +31,7 @@ node bin/aw.mjs roles --host-config config/home.local.json
 node bin/aw.mjs ui --host-config config/home.local.json
 ```
 
-`home` 默认由当前 Codex 会话承担基础/主力开发和主分析，提供 Claude 外部升级与专项角色，并开启主控调度；Codex provider 可按需绑定外部 worker。`office` 提供 OpenCode / DSH / Codex 示例，外部角色与调度初始关闭，主入口职责启用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，需按本机 CLI 目录确认。
+`home` 默认由当前 Codex 会话承担基础/主力开发和主分析，攻坚升级示例为 Codex CLI / `gpt-6-astra` / `xhigh`，专项执行、设计、审查和复核示例使用 Claude，并开启主控调度。`office` 提供 OpenCode / DSH / Codex 示例，外部角色与调度初始关闭，主入口职责启用。`init` 自动定位 PATH 中的 CLI（Windows 包含 PATHEXT 中的 `.exe`、`.cmd` 等入口），找不到时禁用相应绑定，并拒绝覆盖已有文件。模型与档位仅为示例，可在 UI 中更换，需按本机 CLI 目录确认。
 
 UI 可修改已有角色的绑定。也可先读取目录，再预览、保存：
 

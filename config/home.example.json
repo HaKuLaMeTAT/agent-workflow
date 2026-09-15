@@ -58,9 +58,9 @@
       "execution": "worker",
       "access": "workspace-write",
       "permissions": "restricted",
-      "provider": "claude-local",
-      "model": "claude-opus-5",
-      "effort": "high"
+      "provider": "codex-local",
+      "model": "gpt-6-astra",
+      "effort": "xhigh"
     },
     "reviewer": {
       "provider": "claude-local",
