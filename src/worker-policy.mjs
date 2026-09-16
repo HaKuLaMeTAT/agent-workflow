@@ -18,7 +18,7 @@ export function controlDescription(adapter,readMode) {
     output_tokens:'stop on reported usage; an in-flight request may exceed the threshold; missing usage stays unknown',
     reads:readMode==='evidence'?(['acp','dsh'].includes(adapter)?'AW-bounded UTF-8 evidence; ACP file capabilities and permissions denied; native tools must honor the protocol':'AW-bounded UTF-8 evidence; native filesystem tools disabled'):
       ['acp','dsh'].includes(adapter)?'ACP file/permission allowlist; agent-native tools must honor permissions':
-      adapter==='opencode'?'native path permissions plus post-event observation':
+      adapter==='opencode'?'native read/edit path permissions; glob/grep/list disabled in restricted mode; post-event observation':
       adapter==='claude'?'post-event path/output observation; not a pre-read sandbox':
       'native sandbox and observed command-output bounds; shell read_paths are advisory',
     rollback:'budget stops preserve files and partial reports; no automatic rollback'

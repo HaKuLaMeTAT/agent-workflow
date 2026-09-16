@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.4.3）
+# 安装与本机配置（v0.4.4）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -227,3 +227,30 @@ node scripts/live-smoke.mjs --run reviewer
 更新仓库后运行 `node scripts/install-local.mjs --apply --update`，刷新主入口读取的 AW Skill。主机现有模型、档位和权限配置继续保留；新 worker 采用默认预算，只读任务默认使用限定文本证据包。需要原生文件探索的角色可以在 `aw ui` 的“执行预算与读取范围”中配置。旧原生会话续接应显式使用 `read_mode: native`。
 
 迁移注意项与跨 CLI 的强制能力见 [worker 限制说明](WORKER_LIMITS.md)。
+
+
+## v0.4.4 升级
+
+修复 OpenCode 1.18.31 在 Windows 非 Git `directory + temporary` 任务中的受限写入，并保留原生权限拒绝的原因。更新到 `v0.4.4` 后，在仓库目录运行：
+
+```powershell
+git pull --ff-only
+git fetch --tags
+node scripts/install-local.mjs --apply --update
+```
+
+已有角色的 CLI、模型、effort 和权限绑定会保留。无需初始化 Git 或切换 full-access。失败任务的旧日志和旧权限配置不会重写；更新后应创建新验收任务。
+
+离线回归运行 `npm test`；配置好测试运行时后可设 `AW_TEST_UPSTREAM` 加入后台执行集成测试。设置 `AW_TEST_OPENCODE` 为真实 OpenCode 可执行文件路径，可启用 `tests/opencode-native.test.mjs`：它使用本地模拟模型接口，让真实 CLI 执行允许/拒绝案例，不使用账号凭据或付费模型。Windows 示例：
+
+```powershell
+$env:AW_TEST_OPENCODE = (Get-Command opencode.exe).Source
+node --test tests/opencode-native.test.mjs tests/opencode-permissions.test.mjs tests/worker-policy.test.mjs
+```
+
+### v0.4.4 验收记录
+
+- Linux / WSL、原生 Windows：各 62 项测试通过，无跳过；包括真实 OpenCode 1.18.31 加本地模拟模型接口的权限反例，以及其他 CLI、安装与预算回归。
+- Windows 真实模型验收：Node 22.22.1 + OpenCode 1.18.31，请求 `opencode-go/deepseek-v4.1-flash` / `high`。`directory + temporary + restricted` 成功创建并读取 `out/aw-migration.txt`，内容严格为 `AW_DIRECTORY_OK`；AW 文件检查通过，工作区无 Git，原目录保持不变。
+- 专项执行角色共 1 次 CLI 执行、0 次修正；观测到 3 个模型步骤和 2 次成功文件工具调用。CLI 未独立回报实际模型与 effort，按请求配置记录；用量标记为不完整，不据此推断总计费或节省比例。
+- 语法/JSON 检查、`git diff --check`、打包内容检查通过。测试凭据只临时用于隔离的 CLI 登录目录，结束后删除；未打包配置、凭据或原始任务日志。

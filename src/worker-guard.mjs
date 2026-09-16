@@ -22,6 +22,7 @@ function event(line) {
   let e;try{e=JSON.parse(line);}catch{return;}
   meter.ingest(e);const current=snapshot();
   if(e.type==='aw_acp'&&e.observation?.error)stop(e.observation.error);
+  if(current.tool_error)stop(current.tool_error.code);
   if(current.scope_error)stop(current.scope_error.code);
   if(current.largest_read_bytes>plan.budget.max_read_bytes)stop('read_budget_exceeded');
   // End the current call once observable work exceeds a cap. A CLI may report

@@ -14,17 +14,28 @@ export function addUsage(values) {
   if(!values.some(Boolean))return null;
   return Object.fromEntries(TOKEN_KEYS.map(k=>{const v=values.map(u=>u?.[k]).filter(Number.isFinite);return [k,v.length?v.reduce((a,b)=>a+b,0):null];}));
 }
-export function allowedRead(file,scope) {
-  if(!scope)return true;
+export function readAccess(file,scope) {
+  if(!scope)return {allowed:true,missing:false};
   try {
-    const target=fs.realpathSync(path.resolve(scope.cwd,file));
-    return scope.paths.some(p=>target===p.path||(p.directory&&within(p.path,target)));
-  }catch{return false;}
+    let ancestor=path.resolve(scope.cwd,file);const missing=[];
+    for(;;) {
+      // lstat sees dangling links; never treat an unresolved link as absent.
+      try {fs.lstatSync(ancestor);break;}catch(e) {
+        if(e.code!=='ENOENT'||path.dirname(ancestor)===ancestor)throw e;
+        missing.unshift(path.basename(ancestor));ancestor=path.dirname(ancestor);
+      }
+    }
+    const canonical=fs.realpathSync(ancestor);
+    if(missing.length&&!fs.statSync(canonical).isDirectory())return {allowed:false,missing:false};
+    const target=path.join(canonical,...missing);
+    return {allowed:scope.paths.some(p=>path.relative(p.path,target)===''||(p.directory&&within(p.path,target))),missing:missing.length>0};
+  }catch{return {allowed:false,missing:false};}
 }
+export function allowedRead(file,scope) {return readAccess(file,scope).allowed;}
 // Count observed provider events, not guesses about unreported API requests.
 export function telemetry(adapter,{scope}={}) {
   const messages=new Map(),steps=new Map(),tools=new Map(),modelSteps=new Set(),readResults=new Set();
-  let finalUsage=null,complete=false,cost=null,quota=null,session=null,scopeError=null,readBytes=0,largestRead=0,formatErrors=0,context=null;
+  let finalUsage=null,complete=false,cost=null,quota=null,session=null,scopeError=null,toolError=null,missingRead=null,readBytes=0,largestRead=0,formatErrors=0,context=null;
   const recordRead=(id,value)=>{if(readResults.has(id))return;readResults.add(id);const bytes=typeof value==='number'?value:Buffer.byteLength(typeof value==='string'?value:JSON.stringify(value??''));readBytes+=bytes;largestRead=Math.max(largestRead,bytes);};
   function trackTool(id,name,input={}) {
     if(!id)return;
@@ -32,7 +43,9 @@ export function telemetry(adapter,{scope}={}) {
     if(scope?.mode==='evidence'&&name!=='StructuredOutput')scopeError={code:['Read','read','Glob','glob','Grep','grep','list'].includes(name)?'read_scope_exceeded':'permission_blocked',tool:name};
     const file=input.file_path??input.filePath??input.path;
     if(scope&&['Read','read','read_image','Glob','glob','Grep','grep','list'].includes(name)) {
-      if(scope.mode==='evidence'||typeof file!=='string'||!allowedRead(file,scope))scopeError={code:'read_scope_exceeded',tool:name,path:file??null};
+      const access=typeof file==='string'?readAccess(file,scope):{allowed:false};
+      if(scope.mode==='evidence'||!access.allowed)scopeError??={code:'read_scope_exceeded',tool:name,path:file??null};
+      else if(access.missing)missingRead??={code:'read_target_missing',tool:name,path:file};
     }
   }
   function ingest(e) {
@@ -63,7 +76,9 @@ export function telemetry(adapter,{scope}={}) {
     }else if(adapter==='opencode') {
       if(e.type==='step_start')modelSteps.add(e.part?.id??`step-${modelSteps.size}`);
       if(e.type==='tool_use') {
-        const p=e.part??{};trackTool(p.callID??p.id,p.tool,p.state?.input);
+        const p=e.part??{};
+        if(p.state?.status==='error'&&/permission|denied|rejected/i.test(p.state.error??''))toolError??={code:'permission_blocked',tool:p.tool};
+        trackTool(p.callID??p.id,p.tool,p.state?.input);
         if(p.state?.status==='completed'&&['read','glob','grep','list'].includes(p.tool)&&!readResults.has(p.callID??p.id)) {
           recordRead(p.callID??p.id,p.state.output??'');
         }
@@ -95,7 +110,7 @@ export function telemetry(adapter,{scope}={}) {
     const costs=[...steps.values()].map(v=>v.cost).filter(Number.isFinite);
     return {usage,usage_complete:complete,usage_source:finalUsage?'provider_final':steps.size?'provider_steps':messages.size?'partial_messages':'unreported',
       counters,counters_are_observed_lower_bounds:true,model_turns_scope:adapter==='codex'?'visible_agent_messages':adapter==='acp'||adapter==='dsh'?'visible_response_blocks':'observed_model_steps',
-      estimated_cost_usd:cost??(costs.length?costs.reduce((a,b)=>a+b,0):null),quota,context,session_id:session,scope_error:scopeError,largest_read_bytes:largestRead,format_errors:formatErrors};
+      estimated_cost_usd:cost??(costs.length?costs.reduce((a,b)=>a+b,0):null),quota,context,session_id:session,scope_error:scopeError,tool_error:toolError,missing_read:missingRead,largest_read_bytes:largestRead,format_errors:formatErrors};
   }
   return {ingest,snapshot};
 }

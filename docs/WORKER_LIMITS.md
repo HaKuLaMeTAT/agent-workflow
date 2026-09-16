@@ -1,4 +1,4 @@
-# v0.4.3：交付、预算与读取范围
+# Worker 交付、预算与读取范围（v0.4.4）
 
 这些控制适用于 AW 启动的 Claude、Codex、OpenCode、DSH / ACP worker，独立于所选模型。当前主对话不经过 AW worker 进程，AW 不限制或切换主对话的模型。
 
@@ -47,7 +47,7 @@ aw configure --role reviewer --budget-file worker-budget.json --read-mode eviden
 |---|---|---|
 | Claude | 原生 `--max-turns` + AW 事件监控 | 证据模式关闭文件工具；原生模式越界在工具事件到达后停止 |
 | Codex | AW 监控可见回复、工具输出和时长；隐藏模型轮数无法完整统计 | 证据模式关闭 shell、统一执行、图片读取和隐式项目文档加载；原生 shell 的 `read_paths` 不构成文件白名单 |
-| OpenCode | 原生 agent `steps` + AW 事件监控 | 证据模式拒绝工具；原生模式按路径配置读取权限，并监控事件 |
+| OpenCode | 原生 agent `steps` + AW 事件监控 | 证据模式拒绝工具；restricted 原生模式按路径配置 read/edit；glob/grep/list 禁用，并监控事件 |
 | DSH / ACP | AW 监控响应块、工具调用和时长；服务未报告的 token 保持未知 | 客户端按路径检查文件请求；证据模式禁用文件能力并拒绝工具权限；agent 原生工具必须遵守 ACP 协议 |
 
 `prepare.controls` 明确显示这些差异。AW 不能拦截供应商所有内部请求；事件式上限可能在一条回复完成后才被发现，因此可能超过阈值。达到上限时终止后续工作、保留日志和部分结果，不承诺精确计费硬上限。目录、worktree、事件监控均不等于 OS 沙箱。
@@ -83,6 +83,14 @@ AW 在发起模型任务前读取明确列出的 UTF-8 文件，将内容与来�
 
 同一原生会话固定读取模式。旧版本会话按 native 处理，续接时显式传 `read_mode: native`，以免把已接触原生工具和其他文件的会话当成全新的证据模式任务。
 
+### OpenCode 受限路径（v0.4.4）
+
+OpenCode 1.18.31 的 read/edit/write 以 `instance.worktree` 为权限基准。Git 使用当前 worktree 根目录（包括 linked worktree），非 Git 使用 `/`；Windows 非 Git 的匹配路径因此可能不带盘符。AW 只将声明的 `read_paths` 和 `write_paths` 转换到这个基准，不额外授权整个用户目录或执行目录，也不在 Git 失败时改为宽松权限。[项目解析](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/project/project.ts)、[写入权限](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/tool/write.ts)。
+
+`glob/grep` 匹配的是搜索表达式，不能将其权限配置当成目录白名单。因此 restricted 下关闭 `glob/grep/list`，通过 `read` 读取明确声明的文件或目录；需要更多证据时停止并报告。路径含原生通配符 `*`、`?` 时无法精确表达授权，启动前返回 `permission_path_unsupported`。[Glob 源码](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/tool/glob.ts)、[Grep 源码](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/tool/grep.ts)。
+
+AW 对不存在的读取目标解析最近已存在的祖先，再判断授权范围，仍拒绝符号链接逃逸和悬空链接。范围内缺失目标记录在 `telemetry.missing_read`（`read_target_missing`），真正越界仍为 `read_scope_exceeded`。原生工具返回权限拒绝时，`telemetry.tool_error` 记录首个拒绝工具，guard 以 `permission_blocked` 停止重试；后续缓冲事件不覆盖停止原因，已报告用量继续保留。事件监控不是操作系统沙箱，也不提供文件系统竞态隔离。
+
 ## 失败用量和恢复
 
 `status`、`result` 在成功、失败、超时和取消时都返回可用的 `usage`、`usage_complete` 和 telemetry。任务目录内：
@@ -98,7 +106,7 @@ Claude 按消息 ID 合并流式重复项，有最终 usage 时采用最终值�
 
 新任务开始使用上述留存机制；历史中断日志不保证有完整 token 记录。预算耗尽、权限、认证、额度、超时及无法恢复的交付错误都不触发自动换模型或付费重提。检查已有结果后，由主控决定缩小范围、收尾，或依据用户意图调整后续工作预算。
 
-## 本版验证
+## v0.4.3 验证记录
 
 Linux / WSL 与原生 Windows 的 55 项回归覆盖安装迁移、角色配置、各 CLI 协议、目录/worktree 执行、会话续接和预算控制。安装版本断言与末尾无换行事件修正后，对两平台的安装和 worker policy 测试进行了复测，均通过。Windows Edge 另行验证主入口表单、自由模型 ID、调度开关、预算/读取模式预览保存，以及移动端布局。
 

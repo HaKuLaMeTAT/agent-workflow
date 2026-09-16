@@ -2,7 +2,7 @@
 
 以 Codex App / Codex CLI 为主入口，默认承担基础和日常主力开发；按需调用本地 AI CLI 完成攻坚升级、专项执行、方案设计、独立审查和交叉分析。辅助任务拥有独立上下文，主任务先读取摘要，再按需读取证据。
 
-Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.4.3**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
+Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用 ai-cli-mcp 的后台执行层。当前为 **v0.4.4**，支持 Linux / WSL 和原生 Windows 10/11。仓库可放在任意可读写目录，安装后 Codex 自动发现 Skill，并通过登记的入口定位仓库。
 
 ## 功能
 
@@ -19,6 +19,14 @@ Agent Workflow（`aw`）参考 Paseo 的角色与 provider 分离方式，复用
 - **有界结果**：默认摘要包含审计结论、阻塞项、未验证项及证据引用，详细结果分页读取。
 
 工具使用 Node.js 与 `cross-spawn`，没有独立的常驻 daemon、relay 或数据库。`aw ui` 仅在命令运行期间开放本机回环端口。
+
+## v0.4.4：修复 OpenCode 受限目录写入
+
+- OpenCode 权限按实际项目根目录生成，覆盖 Windows 非 Git 临时目录、Git 子目录和 linked worktree；仍只授权声明路径。
+- 范围内尚未创建的文件记录为 `read_target_missing`，不误报读取越界；遇到原生权限拒绝立即停止后续重试，保留首个原因和已报告用量。
+- OpenCode restricted 模式使用 `read` 读取声明文件/目录；关闭无法按目录约束的 `glob/grep/list`。模型、档位及 full-access 配置保持可选。
+
+详见 [升级与验收](docs/INSTALL.md#v044-升级) 和 [读取边界](docs/WORKER_LIMITS.md#opencode-受限路径v044)。
 
 ## v0.4.3：控制 worker 消耗
 

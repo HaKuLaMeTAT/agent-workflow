@@ -105,6 +105,12 @@ test('guard: invalid report is stopped, never promoted to accepted delivery',asy
   const code=`console.log(JSON.stringify({type:'assistant',message:{id:'one',model:'fixture',usage:{output_tokens:11},content:[{type:'tool_use',id:'bad',name:'StructuredOutput',input:${JSON.stringify(invalid)}}]}}));console.log(JSON.stringify({type:'user',message:{content:[{type:'tool_result',tool_use_id:'bad',is_error:true}]}}));setInterval(()=>{},1000);`;
   const r=await runGuard(t,{code});assert.equal(r.exit,1);assert.equal(r.usage.stop_reason,'invalid_result');assert.ok(!r.stdout.includes('aw_delivery'));
 });
+test('guard: OpenCode permission refusal stops retries and preserves first error and failed usage',async t=>{
+  const code=`const emit=e=>console.log(JSON.stringify(e));emit({type:'step_finish',part:{id:'one',reason:'tool-calls',tokens:{input:3,output:7}}});emit({type:'tool_use',part:{id:'write',tool:'write',state:{status:'error',input:{filePath:'target'},error:'Permission denied'}}});emit({type:'tool_use',part:{id:'read',tool:'read',state:{status:'error',input:{filePath:'other'},error:'File not found'}}});setTimeout(()=>{require('fs').writeFileSync('unwanted-retry','called')},1500);`;
+  const r=await runGuard(t,{adapter:'opencode',code});assert.equal(r.exit,1);assert.equal(r.usage.stop_reason,'permission_blocked');assert.equal(r.usage.tool_error.tool,'write');
+  assert.equal(r.usage.usage.output_tokens,7);assert.equal(fs.existsSync(path.join(r.directory,'unwanted-retry')),false);
+  const log=path.join(r.directory,'stdout.log');fs.writeFileSync(log,r.stdout);assert.equal((await getAdapter('opencode').observe(log)).error,'permission_blocked');
+});
 test('guard: native read escapes stop; final events without newline retain usage',async t=>{
   const code=`console.log(JSON.stringify({type:'assistant',message:{id:'one',model:'fixture',usage:{output_tokens:4},content:[{type:'tool_use',id:'read',name:'Read',input:{file_path:'not-declared'}}]}}));setInterval(()=>{},1000);`;
   const blocked=await runGuard(t,{code});assert.equal(blocked.usage.stop_reason,'read_scope_exceeded');
