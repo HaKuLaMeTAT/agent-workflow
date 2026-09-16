@@ -1,4 +1,7 @@
+import {combobox} from './combobox.mjs';
 const $=id=>document.getElementById(id);
+const modelPicker=combobox($('model'),$('model-toggle'),$('model-options'));
+const effortPicker=combobox($('effort'),$('effort-toggle'),$('effort-options'));
 const editable=['provider','model','effort','enabled','execution','access','permissions','read_mode'];
 const budgetKeys=['max_model_turns','max_tool_calls','max_output_tokens','max_provider_calls','max_duration_seconds','max_read_bytes','max_total_read_bytes'];
 const fieldNames={provider:'CLI',model:'模型',effort:'推理档位',enabled:'启用状态',execution:'执行位置',access:'写入能力',permissions:'权限策略',models:'模型允许列表',roles:'路由角色',escalate_after:'升级失败阈值',max_delegations:'单个工作包委派上限'};
@@ -36,10 +39,10 @@ function selectedModels(){
 }
 function renderModelChoices(){
   const {provider,models}=selectedModels();
-  $('model-options').replaceChildren(...models.map(m=>{const option=element('option');option.value=m.id;option.label=m.allowed===false?'需加入允许列表':m.verified?'CLI 目录':'主机配置';return option;}));
+  modelPicker.setOptions(models.map(m=>({value:m.id,label:m.allowed===false?'需加入允许列表':m.verified?'CLI 目录':'主机配置'})));
   renderEfforts();
   const catalog=catalogs.get(provider?.id);
-  const source=provider?.has_allowlist?'可手动输入模型与档位；勾选下方选项可将其加入此 CLI 的允许列表。':'可选择目录中的模型；实际可用性会在任务启动时检查。';
+  const source='点箭头查看全部模型，也可直接输入模型 ID。'+(provider?.has_allowlist?'勾选下方选项可将模型与档位加入此 CLI 的允许列表。':'实际可用性会在任务启动时检查。');
   $('model-help').textContent=discovering.has(provider?.id)?'正在读取 CLI 模型目录，不运行分析任务…':catalog?.error?`目录未能确认（${catalog.error}）。${source}`:catalog?`目录已读取；标注来自 CLI 或主机配置，不代表任务验证通过。${source}`:`当前显示主机配置。${source}`;
   $('refresh-models').disabled=busy||!provider||discovering.has(provider.id);
 }
@@ -47,7 +50,7 @@ function renderEfforts(){
   const {provider,models}=selectedModels(),id=$('model').value;
   const configured=provider?.models.find(m=>m.id===id),found=models.find(m=>m.id===id);
   const efforts=[...new Set([...(configured?.efforts??[]),...(found?.efforts??[])])];
-  $('effort-options').replaceChildren(...efforts.map(e=>{const option=element('option');option.value=e;return option;}));
+  effortPicker.setOptions([{value:'',label:'使用 CLI 默认设置'},...efforts.map(e=>({value:e}))]);
 }
 function renderExecution(){
   const writable=$('access').value==='workspace-write',host=$('execution').value==='host',full=$('permissions').value==='full-access';

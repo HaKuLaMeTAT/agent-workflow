@@ -1,4 +1,4 @@
-# 安装与本机配置（v0.4.4）
+# 安装与本机配置（v0.4.5）
 
 支持 Linux / WSL 和原生 Windows 10/11。需要 Node.js 22.12+、npm，以及已安装、登录的目标 AI CLI。Linux / WSL 需要 `flock`；Windows 使用系统自带的 Windows PowerShell 5.1，不需要管理员权限或 WSL。Windows PowerShell 的进程锁与 Job Object 脚本仅在命令运行时启动，不修改系统执行策略；受组织策略限制时会返回诊断。
 
@@ -254,3 +254,14 @@ node --test tests/opencode-native.test.mjs tests/opencode-permissions.test.mjs t
 - Windows 真实模型验收：Node 22.22.1 + OpenCode 1.18.31，请求 `opencode-go/deepseek-v4.1-flash` / `high`。`directory + temporary + restricted` 成功创建并读取 `out/aw-migration.txt`，内容严格为 `AW_DIRECTORY_OK`；AW 文件检查通过，工作区无 Git，原目录保持不变。
 - 专项执行角色共 1 次 CLI 执行、0 次修正；观测到 3 个模型步骤和 2 次成功文件工具调用。CLI 未独立回报实际模型与 effort，按请求配置记录；用量标记为不完整，不据此推断总计费或节省比例。
 - 语法/JSON 检查、`git diff --check`、打包内容检查通过。测试凭据只临时用于隔离的 CLI 登录目录，结束后删除；未打包配置、凭据或原始任务日志。
+
+
+## v0.4.5 升级
+
+修复网页模型和推理档位的候选列表被当前值过滤的问题。点击右侧箭头可查看所有候选，输入文字可筛选或填写目录外的模型与档位；档位可选择“不指定（默认）”。模型允许列表的预览、校验和保存规则保持不变。
+
+更新仓库后运行 `node scripts/install-local.mjs --apply --update`。**停止原来的 `aw ui`，重新启动并打开新链接**；服务会在启动时载入网页资源，仅刷新旧服务的页面不会加载此次更新。
+
+Windows Edge 已验证：当前模型/档位不清空即可切换，鼠标与键盘选择、取消、清空档位、自定义值及允许列表保存、模型目录刷新期间保留输入、角色草稿与 CLI 切换，以及移动端展开列表无横向溢出。使用临时配置和本地模型目录样例，没有提交模型任务或修改真实角色绑定。
+
+Linux / WSL 与原生 Windows 的界面、配置契约和安装回归各 9 项通过；63 个 JavaScript/JSON 文件检查、差异格式检查和打包内容检查通过。

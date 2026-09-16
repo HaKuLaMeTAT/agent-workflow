@@ -19,7 +19,7 @@ export async function startUi({hostConfig,port=0,cwd=process.cwd()}={}) {
   integer(port,0,65535,'port');
   const hostFile=loadHost(hostConfig).hostFile,token=randomBytes(32).toString('hex'),pending=new Map();
   const uiRoot=path.resolve(import.meta.dirname,'../ui'),assets=new Map();
-  for(const file of ['index.html','style.css','app.mjs'])assets.set(file==='index.html'?'/':`/${file}`,{body:fs.readFileSync(path.join(uiRoot,file)),type:MIME[path.extname(file)]});
+  for(const file of ['index.html','style.css','app.mjs','combobox.mjs'])assets.set(file==='index.html'?'/':`/${file}`,{body:fs.readFileSync(path.join(uiRoot,file)),type:MIME[path.extname(file)]});
   let address;
   const server=http.createServer(async(req,res)=>{
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
